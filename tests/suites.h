@@ -10,5 +10,6 @@ const char *edit_suite(void);
 const char *line_suite(void);
 const char *sqlctx_suite(void);
 const char *comp_suite(void);
+const char *menu_suite(void);
 
 #endif /* SQLSH_TEST_SUITES_H */

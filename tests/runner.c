@@ -21,6 +21,9 @@ static const char *all_tests(void)
         msg = comp_suite();
     }
     if (msg == NULL) {
+        msg = menu_suite();
+    }
+    if (msg == NULL) {
         msg = line_suite();
     }
     return msg;

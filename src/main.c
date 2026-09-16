@@ -3,17 +3,30 @@
  *
  * Argument handling and the REPL. Input comes from line.c, which edits when a
  * terminal is attached and reads plainly otherwise. The completion engine
- * (sqlctx.c, comp.c, menu.c) hooks into the editor in later phases; see
- * PROJECT.md.
+ * Completion is wired here because this is the only place that owns both the
+ * database and the editor: line.c is handed a function, not a connection.
  */
+#include "comp.h"
 #include "db.h"
 #include "line.h"
+#include "theme.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define SQLSH_VERSION "0.1.0"
+
+/* The completion hook. Dot-command candidates arrive in Phase 6, when dot.c
+ * owns the command table; until then the third argument is NULL and dot
+ * contexts simply yield nothing. */
+static CompList *complete_for(void *ctx, const char *text, size_t cursor)
+{
+    SqlContext sctx;
+
+    sql_context(text, cursor, &sctx);
+    return comp_generate((Db *)ctx, &sctx, NULL);
+}
 
 /* Growable line accumulator for multi-line statements. */
 typedef struct {
@@ -317,6 +330,14 @@ int main(int argc, char **argv)
         return 1;
     }
     line_set_keymap(ln, keymap_from_env());
+    {
+        LineCompleter completer;
+
+        completer.generate = complete_for;
+        completer.ctx = db;
+        line_set_completer(ln, &completer);
+    }
+    theme_detect(stdout);
 
     if (line_interactive(ln)) {
         printf("sqlsh %s connected to %s\n", SQLSH_VERSION, db_path(db));

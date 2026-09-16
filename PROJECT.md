@@ -16,7 +16,7 @@ references:
   - "docs/development-workflow.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phases 0-3 complete and gate-green. Phase 4 (menu.c) next."
+notes: "Phases 0-4 complete and gate-green. Phase 5 (out.c) next."
 ---
 
 # sqlsh
@@ -208,9 +208,9 @@ nothing more.
 | `src/line.c` · `include/line.h` | implemented | Terminal layer: termios raw mode, signal-safe restoration, redraw, escape timeout, history file. |
 | `src/sqlctx.c` · `include/sqlctx.h` | implemented | Tokenizer and cursor-context machine. Pure: no allocation, no I/O, no recursion. Phase 7's highlighter reuses the lexer. |
 | `src/comp.c` · `include/comp.h` | implemented | Context → candidate list. Pure given a `Db`: no terminal, no globals. The dot-command table is injected as a `CompDotSource`, so Phase 6 owns it alone. |
-| `src/menu.c` | Phase 4 | The navigable menu. |
+| `src/menu.c` · `include/menu.h` | implemented | The navigable menu: layout, selection, rendering. Told its size, returns bytes; `line.c` owns the terminal. |
 | `src/out.c` | Phase 5 | 13 output modes, box drawing, type-aware colour. |
-| `src/theme.c` | Phase 5 | Colour capability detection; theme file in Phase 7. |
+| `src/theme.c` · `include/theme.h` | partial | Colour capability detection and the style table, brought forward from Phase 5 because the menu needs styles. Phase 5 adds the output styles, Phase 7 the theme file. |
 | `src/dot.c` | Phase 6 | Dot-command table, dispatch, refusals. |
 | `src/hl.c` | Phase 7 | Syntax highlighting while typing. |
 
@@ -523,7 +523,7 @@ returns in milliseconds with `truncated` set. 15 tests in `tests/test_comp.c`,
 
 ---
 
-### Phase 4: The completion menu `[ ]`
+### Phase 4: The completion menu `[x]`
 
 **Description**
 
@@ -533,29 +533,29 @@ tables from columns from keywords, and a highlighted selection.
 
 **Tasks**
 
-- [ ] render below the prompt, multi-column, sized to the terminal
-- [ ] navigation: `Tab` `Shift-Tab` `←` `→` `↑` `↓` `Ctrl-N` `Ctrl-P`
-- [ ] `Enter` accepts, `Esc`/`Ctrl-G` dismisses, typing narrows in place
-- [ ] a unique candidate is inserted without ever drawing a menu
-- [ ] description column, matched-prefix emphasis, group headers, selected-row
+- [x] render below the prompt, multi-column, sized to the terminal
+- [x] navigation: `Tab` `Shift-Tab` `←` `→` `↑` `↓` `Ctrl-N` `Ctrl-P`
+- [x] `Enter` accepts, `Esc`/`Ctrl-G` dismisses, typing narrows in place
+- [x] a unique candidate is inserted without ever drawing a menu
+- [x] description column, matched-prefix emphasis, group headers, selected-row
       highlight — all colours from `theme.c`
-- [ ] truncation shown explicitly when a cap was hit
-- [ ] scrolling when candidates exceed the available rows
-- [ ] `SIGWINCH` re-layout of an open menu
+- [x] truncation shown explicitly when a cap was hit
+- [x] scrolling when candidates exceed the available rows
+- [x] `SIGWINCH` re-layout of an open menu
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] pty tests for the four headline scenarios: `<tab>`, `.tables <tab>`,
+- [x] `make gate` → PASS
+- [x] pty tests for the four headline scenarios: `<tab>`, `.tables <tab>`,
       `SELECT <tab> FROM <tab>`, `WHERE <tab>` — asserted on the buffer after
       accepting a selection
-- [ ] typing after `<tab>` narrows rather than dismisses
-- [ ] `Esc` restores the buffer and the screen exactly as before the menu
-- [ ] a single candidate inserts with no menu drawn (assert absence of menu
+- [x] typing after `<tab>` narrows rather than dismisses
+- [x] `Esc` restores the buffer and the screen exactly as before the menu
+- [x] a single candidate inserts with no menu drawn (assert absence of menu
       output in the capture)
-- [ ] with `NO_COLOR` set, the capture contains no SGR sequences
+- [x] with `NO_COLOR` set, the capture contains no SGR sequences
 
 *Manual*
 
@@ -563,6 +563,23 @@ tables from columns from keywords, and a highlighted selection.
       of the screen, readable columns
 
 **Dependencies** — Phases 1 and 3.
+
+**Notes / Risks**
+
+`theme.c` was brought forward from Phase 5: the menu needs styles, and a
+private palette in `menu.c` would have had to be deleted a phase later. Only
+the capability rules and the menu's styles exist so far; the output modes' add
+to the same table.
+
+**Outcome.** The key bindings live in `edit.c`, which grew a completion state
+and six actions, so there is one decoder for escape sequences and the menu
+bindings are testable without a pty. `menu.c` is told its size and returns the
+bytes to draw, which puts layout, scrolling and selection arithmetic under
+ordinary unit tests; `line.c` writes them, erases with `0J` so a shrinking menu
+leaves nothing behind, and moves the cursor back up to the prompt. Typing
+narrows by regenerating the list on every buffer change, and the menu closes
+itself when nothing matches. `main.c` supplies the generator as a `LineCompleter`
+struct, so `line.c` never sees a database handle. 73 tests, gate PASS.
 
 ---
 
@@ -815,4 +832,4 @@ as phases land.
 
 | Phase | Check | How to reproduce |
 |---|---|---|
-| — | — | — |
+| 4 | The menu feels like zsh's: no flicker, correct placement near the bottom of the screen, readable columns | `make && ./bin/sqlsh tests/test.db`, then type `SELECT * FROM ` and press Tab. Repeat with the window scrolled so the prompt is on the last row, and with a narrow window. |

@@ -1,5 +1,7 @@
 #include "line.h"
 
+#include "menu.h"
+
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
@@ -27,8 +29,13 @@ struct Line {
 
     Edit *edit;
     unsigned cols; /* terminal width, refreshed on SIGWINCH */
-    char *text;    /* the accepted line, owned here */
+    unsigned trows;
+    char *text; /* the accepted line, owned here */
     size_t tcap;
+
+    Menu *menu;
+    unsigned menu_rows; /* lines the menu occupied at the last redraw */
+    LineCompleter completer;
 };
 
 /* The one live instance, so the atexit hook and the signal handlers can restore
@@ -141,7 +148,10 @@ Line *line_new(FILE *in, FILE *out)
     ln->infd = fileno(in);
     ln->tty = ln->infd >= 0 && isatty(ln->infd) == 1 && isatty(fileno(out)) == 1;
     ln->edit = edit_new();
-    if (ln->edit == NULL) {
+    ln->menu = menu_new();
+    if (ln->edit == NULL || ln->menu == NULL) {
+        edit_free(ln->edit);
+        menu_free(ln->menu);
         free(ln);
         return NULL;
     }
@@ -163,6 +173,7 @@ void line_free(Line *ln)
         g_line = NULL;
     }
     edit_free(ln->edit);
+    menu_free(ln->menu);
     free(ln->text);
     free(ln);
 }
@@ -189,6 +200,15 @@ EditViState line_vi_state(const Line *ln)
     return ln != NULL ? edit_vi_state(ln->edit) : EDIT_VI_INSERT;
 }
 
+void line_set_completer(Line *ln, const LineCompleter *completer)
+{
+    static const LineCompleter none = {NULL, NULL};
+
+    if (ln != NULL) {
+        ln->completer = completer != NULL ? *completer : none;
+    }
+}
+
 bool line_history_add(Line *ln, const char *text)
 {
     return ln != NULL && edit_history_add(ln->edit, text);
@@ -209,6 +229,7 @@ const char *line_text(const Line *ln)
  * ---------------------------------------------------------------------- */
 
 #define LINE_COLS_FALLBACK 80u
+#define LINE_ROWS_FALLBACK 24u
 
 static void update_cols(Line *ln)
 {
@@ -216,11 +237,33 @@ static void update_cols(Line *ln)
 
     if (ioctl(ln->infd, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
         ln->cols = ws.ws_col;
+        ln->trows = ws.ws_row > 0 ? ws.ws_row : LINE_ROWS_FALLBACK;
         return;
     }
     if (ln->cols == 0u) {
         ln->cols = LINE_COLS_FALLBACK;
     }
+    if (ln->trows == 0u) {
+        ln->trows = LINE_ROWS_FALLBACK;
+    }
+}
+
+/* Draw the menu below the prompt line and report how many rows it took. The
+ * caller has already erased everything below the prompt, so a menu that has
+ * shrunk or closed leaves nothing behind. */
+static void draw_menu(Line *ln)
+{
+    unsigned rows = 0u;
+    const char *text;
+
+    ln->menu_rows = 0u;
+    if (!menu_active(ln->menu)) {
+        return;
+    }
+    menu_set_size(ln->menu, ln->cols, ln->trows > 1u ? ln->trows - 1u : 1u);
+    text = menu_render(ln->menu, &rows);
+    fputs(text, ln->out);
+    ln->menu_rows = rows;
 }
 
 /* Keep the visible window on the part of the line the cursor is in. Scrolling
@@ -255,12 +298,116 @@ static void refresh(Line *ln, const char *prompt)
     fputc('\r', ln->out);
     fputs(prompt, ln->out);
     fwrite(buf + start, 1u, len - start, ln->out);
-    fputs("\x1b[0K", ln->out); /* erase whatever the previous line left */
+    if (ln->menu_rows > 0u || menu_active(ln->menu)) {
+        /* Erase to the end of the display, not just the line: the menu owns
+         * everything below the prompt, and 0J is what removes the rows a
+         * narrowed or dismissed menu no longer needs. */
+        fputs("\x1b[0J", ln->out);
+        draw_menu(ln);
+    } else {
+        fputs("\x1b[0K", ln->out); /* erase whatever the previous line left */
+    }
     fputc('\r', ln->out);
+    if (ln->menu_rows > 0u) {
+        fprintf(ln->out, "\x1b[%uA", ln->menu_rows);
+    }
     if (plen + curs - start > 0u) {
         fprintf(ln->out, "\x1b[%luC", (unsigned long)(plen + curs - start));
     }
     (void)fflush(ln->out);
+}
+
+/* ------------------------------------------------------------------------
+ * Completion
+ * ---------------------------------------------------------------------- */
+
+static CompList *candidates(Line *ln)
+{
+    if (ln->completer.generate == NULL) {
+        return NULL;
+    }
+    return ln->completer.generate(ln->completer.ctx, edit_buffer(ln->edit), edit_cursor(ln->edit));
+}
+
+/* Overwrite the partial word with the chosen text. The offset comes from the
+ * list rather than from a rescan, so the two can never disagree. */
+static void insert_candidate(Line *ln, const CompList *list, const Comp *c)
+{
+    if (list == NULL || c == NULL) {
+        return;
+    }
+    (void)edit_replace_range(ln->edit, comp_offset(list), edit_cursor(ln->edit), c->text);
+}
+
+static void close_menu(Line *ln)
+{
+    menu_close(ln->menu);
+    edit_completing(ln->edit, false);
+}
+
+static void start_completion(Line *ln, const char *prompt)
+{
+    CompList *list = candidates(ln);
+
+    if (list == NULL || comp_count(list) == 0u) {
+        comp_free(list);
+        fputc('\a', ln->out);
+        (void)fflush(ln->out);
+        return;
+    }
+    if (comp_count(list) == 1u) {
+        /* One candidate is not a choice: insert it and never draw a menu. */
+        insert_candidate(ln, list, comp_at(list, 0u));
+        comp_free(list);
+        refresh(ln, prompt);
+        return;
+    }
+    menu_open(ln->menu, list);
+    edit_completing(ln->edit, true);
+    refresh(ln, prompt);
+}
+
+/* Called after the buffer changed while the menu was open: the list is rebuilt
+ * for the new prefix, and the menu closes by itself once nothing matches. */
+static void narrow(Line *ln)
+{
+    menu_open(ln->menu, candidates(ln));
+    if (!menu_active(ln->menu)) {
+        edit_completing(ln->edit, false);
+    }
+}
+
+static void accept_completion(Line *ln, const char *prompt)
+{
+    insert_candidate(ln, menu_list(ln->menu), menu_selected(ln->menu));
+    close_menu(ln);
+    refresh(ln, prompt);
+}
+
+static LineStatus apply_completion(Line *ln, EditAction act, const char *prompt)
+{
+    static const MenuMove moves[] = {MENU_NEXT, MENU_PREV, MENU_UP, MENU_DOWN};
+
+    switch (act) {
+    case EDIT_COMPLETE:
+        start_completion(ln, prompt);
+        return LINE_OK;
+    case EDIT_COMP_NEXT:
+    case EDIT_COMP_PREV:
+    case EDIT_COMP_UP:
+    case EDIT_COMP_DOWN:
+        menu_move(ln->menu, moves[act - EDIT_COMP_NEXT]);
+        refresh(ln, prompt);
+        return LINE_OK;
+    case EDIT_COMP_ACCEPT:
+        accept_completion(ln, prompt);
+        return LINE_OK;
+    case EDIT_COMP_CANCEL:
+    default:
+        close_menu(ln);
+        refresh(ln, prompt);
+        return LINE_OK;
+    }
 }
 
 /* ------------------------------------------------------------------------
@@ -336,8 +483,14 @@ static LineStatus read_plain(Line *ln)
 static LineStatus apply(Line *ln, EditAction act, const char *prompt, bool *done)
 {
     *done = false;
+    if (act >= EDIT_COMPLETE) {
+        return apply_completion(ln, act, prompt);
+    }
     switch (act) {
     case EDIT_REDRAW:
+        if (edit_is_completing(ln->edit)) {
+            narrow(ln);
+        }
         refresh(ln, prompt);
         return LINE_OK;
     case EDIT_CLEAR:
@@ -445,6 +598,8 @@ LineStatus line_read(Line *ln, const char *prompt)
         return read_plain(ln);
     }
     st = read_raw(ln, prompt);
+    close_menu(ln);
+    ln->menu_rows = 0u;
     raw_off(ln);
     return st;
 }

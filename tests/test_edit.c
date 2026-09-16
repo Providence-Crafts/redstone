@@ -326,6 +326,80 @@ static const char *test_vi_normal_is_not_insert(void)
     return NULL;
 }
 
+/* --- completion keys ---------------------------------------------------- */
+
+static const char *test_completion_actions(void)
+{
+    Edit *ed = edit_new();
+    bool tab;
+    bool nav;
+    bool accept;
+    bool cancel;
+    bool inert;
+
+    mu_assert("edit_new failed", ed != NULL);
+    tab = feed_last(ed, "sel\t") == EDIT_COMPLETE && !edit_is_completing(ed);
+
+    /* Until the caller says a menu is open, the navigation keys keep their
+     * ordinary meanings -- Ctrl-P must still walk history. */
+    inert = feed_last(ed, "\x10") != EDIT_COMP_PREV;
+
+    edit_completing(ed, true);
+    nav = feed_last(ed, "\t") == EDIT_COMP_NEXT && feed_last(ed, "\x1b[Z") == EDIT_COMP_PREV &&
+          feed_last(ed, "\x0e") == EDIT_COMP_NEXT && feed_last(ed, "\x10") == EDIT_COMP_PREV &&
+          feed_last(ed, "\x1b[B") == EDIT_COMP_DOWN && feed_last(ed, "\x1b[A") == EDIT_COMP_UP;
+    accept = feed_last(ed, "\r") == EDIT_COMP_ACCEPT;
+    cancel = feed_last(ed, "\x07") == EDIT_COMP_CANCEL;
+    edit_free(ed);
+
+    mu_assert("Tab should ask for completion", tab);
+    mu_assert("navigation keys should be ordinary keys with no menu open", inert);
+    mu_assert("a navigation key was not routed to the menu", nav);
+    mu_assert("Enter should accept the selection", accept);
+    mu_assert("Ctrl-G should dismiss the menu", cancel);
+    return NULL;
+}
+
+/* Anything that is not a menu key must still edit, so that typing narrows. */
+static const char *test_completion_lets_typing_through(void)
+{
+    Edit *ed = edit_new();
+    bool typed;
+    bool erased;
+
+    mu_assert("edit_new failed", ed != NULL);
+    feed(ed, "sel");
+    edit_completing(ed, true);
+    typed = feed_last(ed, "e") == EDIT_REDRAW && strcmp(edit_buffer(ed), "sele") == 0;
+    erased = feed_last(ed, "\x7f") == EDIT_REDRAW && strcmp(edit_buffer(ed), "sel") == 0;
+    edit_free(ed);
+
+    mu_assert("an ordinary key should still insert while completing", typed);
+    mu_assert("backspace should still delete while completing", erased);
+    return NULL;
+}
+
+static const char *test_replace_range(void)
+{
+    Edit *ed = edit_new();
+    bool replaced;
+    bool cursor;
+    bool rejected;
+
+    mu_assert("edit_new failed", ed != NULL);
+    feed(ed, "select * from emp");
+    replaced = edit_replace_range(ed, 14u, 17u, "employees") &&
+               strcmp(edit_buffer(ed), "select * from employees") == 0;
+    cursor = edit_cursor(ed) == 23u;
+    rejected = !edit_replace_range(ed, 5u, 2u, "x") && !edit_replace_range(ed, 0u, 999u, "x");
+    edit_free(ed);
+
+    mu_assert("replace_range produced the wrong buffer", replaced);
+    mu_assert("the cursor should land after the inserted text", cursor);
+    mu_assert("an inverted or out-of-range span should be refused", rejected);
+    return NULL;
+}
+
 const char *edit_suite(void)
 {
     mu_run_test(test_insert_and_cursor);
@@ -339,5 +413,8 @@ const char *edit_suite(void)
     mu_run_test(test_vi_operators);
     mu_run_test(test_vi_counts_and_undo);
     mu_run_test(test_vi_normal_is_not_insert);
+    mu_run_test(test_completion_actions);
+    mu_run_test(test_completion_lets_typing_through);
+    mu_run_test(test_replace_range);
     return NULL;
 }

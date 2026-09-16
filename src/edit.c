@@ -29,6 +29,8 @@ struct Edit {
     char *undo;        /* single-level undo snapshot, or NULL */
     size_t undo_pos;
 
+    bool completing;
+
     bool in_esc;
     char seq[EDIT_SEQ_MAX];
     size_t seqlen;
@@ -389,6 +391,7 @@ void edit_reset(Edit *e)
     e->vi_count = 0u;
     e->vi_pending = 0;
     e->vi = EDIT_VI_INSERT;
+    e->completing = false;
     e->in_esc = false;
     e->seqlen = 0u;
     free(e->undo);
@@ -418,6 +421,32 @@ bool edit_set_buffer(Edit *e, const char *text)
         return false;
     }
     return replace_all(e, text);
+}
+
+bool edit_replace_range(Edit *e, size_t from, size_t to, const char *text)
+{
+    if (e == NULL || text == NULL || from > to || to > e->len) {
+        return false;
+    }
+    undo_save(e);
+    buf_delete(e, from, to);
+    if (!buf_insert(e, from, text, strlen(text))) {
+        return false;
+    }
+    e->pos = from + strlen(text);
+    return true;
+}
+
+void edit_completing(Edit *e, bool on)
+{
+    if (e != NULL) {
+        e->completing = on;
+    }
+}
+
+bool edit_is_completing(const Edit *e)
+{
+    return e != NULL && e->completing;
 }
 
 void edit_set_keymap(Edit *e, EditKeymap keymap)
@@ -632,8 +661,7 @@ static EditAction emacs_key(Edit *e, int key)
     case CTRL('W'):
         return emacs_kill(e, key);
     case '\t':
-        /* Reserved for completion; Phase 4 takes it. */
-        return EDIT_BELL;
+        return EDIT_COMPLETE;
     default:
         break;
     }
@@ -870,8 +898,50 @@ static EditAction vi_normal_key(Edit *e, int key)
  * Dispatch
  * ------------------------------------------------------------------------ */
 
+/* --------------------------------------------------------------------------
+ * Completion keymap
+ *
+ * Consulted first while a menu is open. Only the keys that mean something to a
+ * menu are claimed; everything else falls through to ordinary editing, which
+ * is what makes typing narrow the list rather than dismiss it.
+ * ------------------------------------------------------------------------ */
+
+static EditAction completion_key(int key)
+{
+    switch (key) {
+    case '\t':
+    case CTRL('N'):
+    case K_RIGHT:
+        return EDIT_COMP_NEXT;
+    case K_SHIFT_TAB:
+    case CTRL('P'):
+    case K_LEFT:
+        return EDIT_COMP_PREV;
+    case K_UP:
+        return EDIT_COMP_UP;
+    case K_DOWN:
+        return EDIT_COMP_DOWN;
+    case CTRL('J'):
+    case CTRL('M'):
+        return EDIT_COMP_ACCEPT;
+    case K_ESC:
+    case CTRL('G'):
+    case CTRL('C'):
+        return EDIT_COMP_CANCEL;
+    default:
+        return EDIT_NONE;
+    }
+}
+
 static EditAction dispatch(Edit *e, int key)
 {
+    if (e->completing) {
+        EditAction act = completion_key(key);
+
+        if (act != EDIT_NONE) {
+            return act;
+        }
+    }
     if (e->keymap == EDIT_VI) {
         if (e->vi == EDIT_VI_NORMAL) {
             return vi_normal_key(e, key);

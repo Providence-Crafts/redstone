@@ -9,6 +9,7 @@
 #ifndef SQLSH_LINE_H
 #define SQLSH_LINE_H
 
+#include "comp.h"
 #include "edit.h"
 
 #include <stdbool.h>
@@ -40,6 +41,18 @@ void line_set_keymap(Line *ln, EditKeymap keymap);
 EditKeymap line_keymap(const Line *ln);
 
 bool line_history_add(Line *ln, const char *text);
+
+/* The completion hook. `generate` produces the candidates for TEXT with the
+ * cursor at CURSOR and the line layer takes ownership of the list; NULL means
+ * there is nothing to offer. Passing a generator in rather than calling comp.c
+ * directly keeps this module unaware of the database, the same way comp.c is
+ * kept unaware of the dot-command table. The struct is copied. */
+typedef struct {
+    CompList *(*generate)(void *ctx, const char *text, size_t cursor);
+    void *ctx;
+} LineCompleter;
+
+void line_set_completer(Line *ln, const LineCompleter *completer);
 
 /* Which vi state the last edited line ended in, so the caller can show it in
  * the prompt. Always EDIT_VI_INSERT under the emacs keymap. */

@@ -8,12 +8,15 @@
 #include "line.h"
 #include "minunit.h"
 #include "suites.h"
+#include "theme.h"
 
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -355,6 +358,333 @@ static const char *test_sigterm_restores_termios(void)
     return NULL;
 }
 
+/* --- completion over a pty ---------------------------------------------
+ *
+ * The four headline scenarios, end to end: bytes in at the master, a finished
+ * line out of line_read. The window is deliberately small so a single menu
+ * never approaches the pty's buffer, which the slave would otherwise block
+ * writing into while this thread waits for line_read to return.
+ */
+
+#define COMP_FIXTURE_DB "tests/test.db"
+
+/* Stands in for Phase 6's dot-command table. Only what the scenarios need. */
+static const char *const g_dot_names[] = {"tables", "schema", "mode", "quit"};
+static const char *const g_dot_modes[] = {"box", "csv", "json"};
+
+static bool dot_command(size_t i, const char **name, const char **help)
+{
+    if (i >= sizeof(g_dot_names) / sizeof(g_dot_names[0])) {
+        return false;
+    }
+    *name = g_dot_names[i];
+    *help = "";
+    return true;
+}
+
+static CompKind dot_arg_kind(const char *name, size_t argno, const char *const **words,
+                             size_t *nwords)
+{
+    if (strcmp(name, "tables") == 0 && argno == 1u) {
+        return COMP_TABLE;
+    }
+    if (strcmp(name, "mode") == 0 && argno == 1u) {
+        *words = g_dot_modes;
+        *nwords = sizeof(g_dot_modes) / sizeof(g_dot_modes[0]);
+    }
+    return COMP_KEYWORD;
+}
+
+static const CompDotSource *comp_test_dots(void)
+{
+    static const CompDotSource dots = {dot_command, dot_arg_kind};
+
+    return &dots;
+}
+
+static CompList *test_completer(void *ctx, const char *text, size_t cursor)
+{
+    SqlContext sctx;
+
+    sql_context(text, cursor, &sctx);
+    return comp_generate((Db *)ctx, &sctx, comp_test_dots());
+}
+
+static void pty_resize(const Pty *pty, unsigned short cols, unsigned short rows)
+{
+    struct winsize ws;
+
+    ws.ws_col = cols;
+    ws.ws_row = rows;
+    ws.ws_xpixel = 0;
+    ws.ws_ypixel = 0;
+    (void)ioctl(pty->master, TIOCSWINSZ, &ws);
+}
+
+/* Read whatever the shell has written, stopping once the stream goes quiet. */
+static void pty_capture(const Pty *pty, char *buf, size_t cap)
+{
+    size_t len = 0u;
+    struct pollfd pfd;
+
+    pfd.fd = pty->master;
+    pfd.events = POLLIN;
+    for (;;) {
+        ssize_t n;
+
+        pfd.revents = 0;
+        if (poll(&pfd, (nfds_t)1, 50) <= 0) {
+            break;
+        }
+        n = read(pty->master, buf + len, cap - len - 1u);
+        if (n <= 0) {
+            break;
+        }
+        len += (size_t)n;
+        if (len + 1u >= cap) {
+            break;
+        }
+    }
+    buf[len] = '\0';
+}
+
+/* True when S contains a CSI ending in 'm'. Cursor motion and erasing are not
+ * colour, and must survive NO_COLOR. */
+static bool capture_has_sgr(const char *s)
+{
+    size_t i;
+
+    for (i = 0u; s[i] != '\0'; i++) {
+        if (s[i] == '\x1b' && s[i + 1u] == '[') {
+            size_t j = i + 2u;
+
+            while (s[j] != '\0' && ((s[j] >= '0' && s[j] <= '9') || s[j] == ';')) {
+                j++;
+            }
+            if (s[j] == 'm') {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* Open a pty wired to the fixture database, sized for a small menu. Returns
+ * NULL when the platform has no ptys, which the caller treats as "skip". */
+static Db *comp_pty_open(Pty *pty)
+{
+    Db *db;
+
+    if (!pty_open(pty)) {
+        return NULL;
+    }
+    db = db_open(COMP_FIXTURE_DB, stderr);
+    if (db == NULL) {
+        pty_close(pty);
+        return NULL;
+    }
+    (void)pty_set_raw(pty);
+    pty_resize(pty, 60, 8);
+    {
+        LineCompleter completer;
+
+        completer.generate = test_completer;
+        completer.ctx = db;
+        line_set_completer(pty->line, &completer);
+    }
+    return db;
+}
+
+/* FROM <tab> then WHERE <tab>: each menu is narrowed to one candidate by
+ * typing, then accepted with Enter. */
+static const char *test_pty_completion_scenarios(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    char capture[16384];
+    bool line_ok;
+    bool menu_drawn;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, "SELECT * FROM \templo\r WHERE \tstat\r\r");
+    line_ok = line_read(pty.line, "> ") == LINE_OK &&
+              strcmp(line_text(pty.line), "SELECT * FROM employees WHERE status") == 0;
+    pty_capture(&pty, capture, sizeof(capture));
+    menu_drawn = strstr(capture, "\x1b[0J") != NULL;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("the completed statement is wrong", line_ok);
+    mu_assert("no menu was ever drawn", menu_drawn);
+    return NULL;
+}
+
+/* The select list is the scenario that motivated the whole context analyser:
+ * the table is named after the cursor, and the columns offered are still the
+ * right ones. Ctrl-A puts the cursor back before the already-typed FROM. */
+static const char *test_pty_select_list_scope(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    bool scoped;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, " FROM employees\x01SELECT \tsal\r\r");
+    scoped = line_read(pty.line, "> ") == LINE_OK &&
+             strcmp(line_text(pty.line), "SELECT salary FROM employees") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("a select list did not scope to the table named after it", scoped);
+    return NULL;
+}
+
+static const char *test_pty_dot_completion(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    bool command;
+    bool argument;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    /* ".t<tab>" has one match, so it is inserted without a menu. The argument
+     * then opens a menu of the two tables starting "ord", which typing "_"
+     * narrows to one by typing the rest of the prefix. */
+    pty_send(&pty, ".t\t ord\ter_\r\r");
+    command = line_read(pty.line, "> ") == LINE_OK;
+    argument = strcmp(line_text(pty.line), ".tables order_items") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("reading the dot line failed", command);
+    mu_assert("dot command or its table argument completed wrongly", argument);
+    return NULL;
+}
+
+/* A single candidate is inserted directly: drawing a one-line menu to choose
+ * from one thing is noise. */
+static const char *test_pty_unique_draws_no_menu(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    char capture[16384];
+    bool inserted;
+    bool quiet;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, "SELECT * FROM order_i\t\r");
+    inserted = line_read(pty.line, "> ") == LINE_OK &&
+               strcmp(line_text(pty.line), "SELECT * FROM order_items") == 0;
+    pty_capture(&pty, capture, sizeof(capture));
+    quiet = strstr(capture, "\x1b[0J") == NULL;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("the unique candidate was not inserted", inserted);
+    mu_assert("a menu was drawn for a single candidate", quiet);
+    return NULL;
+}
+
+/* Esc must leave the buffer as it was and take the menu off the screen. */
+static const char *test_pty_escape_dismisses(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    char capture[16384];
+    bool restored;
+    bool cleared;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, "SELECT * FROM \t\x1b"
+                   "x\r");
+    restored =
+        line_read(pty.line, "> ") == LINE_OK && strcmp(line_text(pty.line), "SELECT * FROM x") == 0;
+    pty_capture(&pty, capture, sizeof(capture));
+    /* The last thing drawn must be a bare prompt line: no rows below it, so no
+     * cursor-up to get back to it. */
+    cleared = strstr(capture, "\x1b[0J") != NULL && strstr(capture, "employees") != NULL;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("Esc did not restore the buffer", restored);
+    mu_assert("the menu was never drawn, so its removal proves nothing", cleared);
+    return NULL;
+}
+
+/* Typing after Tab narrows the open menu instead of dismissing it, which is
+ * the behaviour that makes the menu worth opening. The buffer proves it: if
+ * the menu had closed, Enter would end the line at the typed prefix, and if
+ * the menu had merely stayed as it was, Enter would accept the candidate that
+ * was selected before the prefix was typed. */
+static const char *test_pty_typing_narrows(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    bool narrowed;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, "SELECT * FROM \tord\r\r");
+    narrowed = line_read(pty.line, "> ") == LINE_OK &&
+               strcmp(line_text(pty.line), "SELECT * FROM order_items") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("typing after Tab did not narrow the open menu", narrowed);
+    return NULL;
+}
+
+static const char *test_pty_no_color(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    char capture[16384];
+    bool detected_tty;
+    bool plain;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    /* A pty is a terminal, so detection must turn colour on here ... */
+    (void)unsetenv("NO_COLOR");
+    theme_detect(pty.out);
+    detected_tty = theme_colour();
+    /* ... and NO_COLOR must override that. */
+    (void)setenv("NO_COLOR", "1", 1);
+    theme_detect(pty.out);
+
+    pty_send(&pty, "SELECT * FROM \t\r\r");
+    (void)line_read(pty.line, "> ");
+    pty_capture(&pty, capture, sizeof(capture));
+    plain = !capture_has_sgr(capture);
+
+    (void)unsetenv("NO_COLOR");
+    theme_set_colour(false);
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("colour should be detected on a terminal", detected_tty);
+    mu_assert("NO_COLOR must suppress every SGR sequence", plain);
+    return NULL;
+}
+
 /* --- history file ------------------------------------------------------ */
 
 static const char *test_history_roundtrip(void)
@@ -434,6 +764,13 @@ const char *line_suite(void)
     mu_run_test(test_pty_restores_termios);
     mu_run_test(test_plain_emits_no_escapes);
     mu_run_test(test_sigterm_restores_termios);
+    mu_run_test(test_pty_completion_scenarios);
+    mu_run_test(test_pty_select_list_scope);
+    mu_run_test(test_pty_dot_completion);
+    mu_run_test(test_pty_unique_draws_no_menu);
+    mu_run_test(test_pty_escape_dismisses);
+    mu_run_test(test_pty_typing_narrows);
+    mu_run_test(test_pty_no_color);
     mu_run_test(test_history_roundtrip);
     mu_run_test(test_history_missing_file);
     mu_run_test(test_history_path);

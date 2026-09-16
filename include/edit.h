@@ -20,7 +20,20 @@ typedef enum {
     EDIT_EOF,      /* Ctrl-D on an empty buffer */
     EDIT_INTR,     /* Ctrl-C: abandon the line and any pending statement */
     EDIT_CLEAR,    /* Ctrl-L: clear the screen, then repaint */
-    EDIT_BELL      /* the key means nothing here */
+    EDIT_BELL,     /* the key means nothing here */
+
+    /* Completion. EDIT_COMPLETE asks the caller to offer candidates; the rest
+     * are only ever returned while completion is active, and say what to do
+     * with the open menu. Deciding these here rather than in the menu keeps
+     * every key binding in one testable place and avoids a second decoder for
+     * escape sequences. */
+    EDIT_COMPLETE,
+    EDIT_COMP_NEXT,
+    EDIT_COMP_PREV,
+    EDIT_COMP_UP,
+    EDIT_COMP_DOWN,
+    EDIT_COMP_ACCEPT,
+    EDIT_COMP_CANCEL
 } EditAction;
 
 typedef enum { EDIT_EMACS = 0, EDIT_VI } EditKeymap;
@@ -56,6 +69,16 @@ size_t edit_cursor(const Edit *e); /* byte offset, 0..len */
 
 /* Replace the buffer wholesale; cursor goes to the end. Used to seed a line. */
 bool edit_set_buffer(Edit *e, const char *text);
+
+/* Replace the bytes in [from, to) with TEXT and leave the cursor just past it.
+ * This is how an accepted completion is inserted over the partial word. */
+bool edit_replace_range(Edit *e, size_t from, size_t to, const char *text);
+
+/* While completion is active the navigation keys drive the menu instead of the
+ * buffer, and any other key edits as usual so that typing narrows the list.
+ * The caller turns this on when it opens a menu and off when it closes one. */
+void edit_completing(Edit *e, bool on);
+bool edit_is_completing(const Edit *e);
 
 void edit_set_keymap(Edit *e, EditKeymap keymap);
 EditKeymap edit_keymap(const Edit *e);
