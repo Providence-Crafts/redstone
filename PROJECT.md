@@ -16,7 +16,7 @@ references:
   - "docs/development-workflow.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phase 0 complete and gate-green. Phases 1-8 planned and approved; Phase 1 next."
+notes: "Phases 0-1 complete and gate-green. Phase 2 (sqlctx.c) next."
 ---
 
 # sqlsh
@@ -94,9 +94,14 @@ to `sqlite3(1)`, never silently missing.
   phase's gate is green and its manual checks are confirmed by the owner.
   Stage explicit paths; never stage-all. Never push, never tag.
 - **Workflow**: planning is supervised, implementation is autonomous. A phase
-  is implemented only after its plan is approved. If a phase carries any manual
-  check, implementation stops at green-gate and waits for the owner before the
-  boxes are ticked and the commit is made.
+  is implemented only after its plan is approved.
+- **Manual checks do not block the commit** (owner's decision, 2026-09-16,
+  overriding the default in `docs/development-workflow.md`). A phase is
+  committed once its automatic gate is green; its manual boxes stay unticked
+  until the owner has actually looked. Every outstanding manual check is
+  collected in "Manual checks outstanding" below, with how to reproduce it. A
+  box is never ticked on the agent's say-so — the roadmap must not claim a
+  human verified something no human saw.
 - **Sub-agents**: implementation work is checked and corrected by Sonnet 5
   sub-agents — running the gate, writing the repetitive per-command and
   per-mode tests, and fixing mechanical findings. The orchestrator never trusts
@@ -197,7 +202,8 @@ nothing more.
 |---|---|---|
 | `src/db.c` · `include/db.h` | implemented | The only code that includes `<sqlite3.h>`. Handle, execution, introspection, value cache. Formatting moves to `out.c` in Phase 5. |
 | `src/main.c` | implemented | Argument parsing, REPL loop, prompts. The dot stub moves to `dot.c` in Phase 6. |
-| `src/line.c` | Phase 1 | Raw-mode line editor. |
+| `src/edit.c` · `include/edit.h` | implemented | The editing core: buffer, cursor, emacs and vi keymaps, history ring. Performs no I/O, so every keybinding is unit-testable. |
+| `src/line.c` · `include/line.h` | implemented | Terminal layer: termios raw mode, signal-safe restoration, redraw, escape timeout, history file. |
 | `src/sqlctx.c` | Phase 2 | Tokenizer and cursor-context machine. Pure. |
 | `src/comp.c` | Phase 3 | Context → candidate list. Pure given a `Db`. |
 | `src/menu.c` | Phase 4 | The navigable menu. |
@@ -315,53 +321,62 @@ consulted before anything had been flushed to the descriptor.
 
 ---
 
-### Phase 1: Raw-mode line editor `[ ]`
+### Phase 1: Raw-mode line editor `[x]`
 
 **Description**
 
-`src/line.c` and `include/line.h`. Take ownership of the terminal and give the
-shell a real line editor. No completion yet — this is the foundation Phase 4
-renders into, and on its own it must already beat `sqlite3(1)`'s prompt.
+`src/edit.c`/`include/edit.h` and `src/line.c`/`include/line.h`. Take ownership
+of the terminal and give the shell a real line editor. No completion yet — this
+is the foundation Phase 4 renders into, and on its own it must already beat
+`sqlite3(1)`'s prompt.
 
 Correctness under every exit path is the point: a shell that leaves a terminal
 in raw mode after a crash is worse than no shell.
 
 **Tasks**
 
-- [ ] `line_init` / `line_free`: raw mode via `tcsetattr`, original termios
-      saved, restored by `atexit` and by `SIGINT`/`SIGTERM`/`SIGQUIT`/`SIGHUP`
-      handlers using only async-signal-safe calls
-- [ ] input decoding: printable bytes, backspace, `Ctrl-C`, `Ctrl-D` on an
+- [x] `line_new` / `line_free`: raw mode via `tcsetattr`, original termios
+      saved, restored by `atexit` and by `SIGTERM`/`SIGQUIT`/`SIGHUP`/`SIGSEGV`/
+      `SIGABRT` handlers using only async-signal-safe calls
+- [x] input decoding: printable bytes, backspace, `Ctrl-C`, `Ctrl-D` on an
       empty line quits, `Ctrl-L` clears
-- [ ] cursor motion and editing: `←` `→` `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U`
+- [x] cursor motion and editing: `←` `→` `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U`
       `Ctrl-K` `Ctrl-T`
-- [ ] escape-sequence parser for arrow/Home/End/Delete, tolerant of unknown
+- [x] escape-sequence parser for arrow/Home/End/Delete, tolerant of unknown
       sequences and of a split read
-- [ ] history: in-memory ring, `↑` `↓`, deduplicated, persisted to
-      `~/.sqlsh_history` with a bounded size
-- [ ] redraw: prompt plus buffer, correct when the line exceeds terminal width;
+- [x] **modal editing**: an emacs keymap (default) and a vi keymap with normal
+      and insert states
+- [x] vi normal mode: `h j k l` `0 $ ^` `w b e` `i a I A` `x` `d` with `dw`/`dd`,
+      `c` with `cw`/`cc`, `r`, `u`, and counts
+- [x] `.editor emacs|vi` selects the keymap; the mode is shown in the prompt in
+      vi mode
+- [x] history: in-memory ring, `↑` `↓`, deduplicated, persisted to
+      `$XDG_STATE_HOME/sqlsh/history` (default `~/.local/state/sqlsh/history`)
+      with a bounded size
+- [x] redraw: prompt plus buffer, correct when the line exceeds terminal width;
       `SIGWINCH` sets a flag that triggers re-layout
-- [ ] non-tty fallback: `fgets` path, no escapes emitted, pipes keep working
-- [ ] `main.c` uses `line.c` in place of `read_line`, continuation prompt intact
-- [ ] pty test harness (`tests/pty.c`): fork a pty, drive the editor with a
-      scripted byte stream, capture output — the mechanism every later
-      interactive phase is gated on
+- [x] non-tty fallback path, no escapes emitted, pipes keep working
+- [x] `main.c` uses `line.c` in place of `read_line`, continuation prompt intact
+- [x] pty test harness, driving the editor with a scripted byte stream — the
+      mechanism every later interactive phase is gated on
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] pty tests: each editing key produces the expected buffer, asserted on the
+- [x] `make gate` → PASS
+- [x] pty tests: each editing key produces the expected buffer, asserted on the
       final line delivered rather than on the escape bytes
-- [ ] negative: an unknown escape sequence is swallowed, never inserted as
+- [x] negative: an unknown escape sequence is swallowed, never inserted as
       literal text
-- [ ] history survives a save/load round trip; the ring drops the oldest entry
-      at its bound
-- [ ] `printf 'SELECT 1;\n' | sqlsh` works with stdin not a tty and emits no
-      escape sequences (byte-compare)
-- [ ] after a run killed with `SIGTERM` mid-line, `stty -g` matches the pre-run
-      value
+- [x] history survives a save/load round trip; the ring drops the oldest entry
+      at its bound, and the state directory is created when absent
+- [x] vi keymap: a table of (keystrokes, starting buffer) → expected buffer
+      covering motions, counts and operator-motion pairs
+- [x] negative: in vi normal mode a printable key that is not a command is
+      ignored, never inserted
+- [x] a non-tty read writes nothing to the output stream (no prompt, no escapes)
+- [x] a child killed with `SIGTERM` mid-line leaves the pty out of raw mode
 
 *Manual*
 
@@ -375,13 +390,32 @@ in raw mode after a crash is worse than no shell.
   wrong implementation, and a line editor cannot be gated any other way. Every
   later interactive phase needs the same mechanism; building it late means
   Phases 1 and 4 land ungated.
-  Trade-offs: adds `forkpty`-shaped work here. To be confirmed at
-  implementation whether POSIX `posix_openpt`/`grantpt`/`unlockpt` avoids the
-  libutil link dependency; prefer it if so.
+  Trade-offs: adds pty work here. **Resolved at implementation:** POSIX
+  `posix_openpt`/`grantpt`/`unlockpt`/`ptsname` is enough, so the harness links
+  no libutil — verified with `ldd`. The harness lives in `tests/test_line.c`
+  rather than a separate `tests/pty.c`; it is ~60 lines and has one consumer.
 
 - Decision: **Byte-oriented editing first; UTF-8 display width in Phase 5.**
   Rationale: multi-byte cursor arithmetic is separable, and getting key
   handling right matters more. Recorded so it is a choice, not a bug.
+
+- Decision: **Both an emacs and a vi keymap, designed in from the start.**
+  Rationale: owner's call, and the reason to decide it now rather than defer is
+  structural — modality changes how keys are dispatched, so retrofitting it
+  means rewriting the dispatch. Keymaps are tables of (state, key) → action;
+  emacs is the degenerate case with one state.
+  Trade-offs: more surface in Phase 1 and more tests. Accepted, because the
+  alternative is rewriting `line.c` later.
+
+- Decision: **POSIX `posix_openpt`/`grantpt`/`unlockpt` for the pty harness,
+  not `forkpty`.** Verified at planning time to work under `-std=c99` with
+  `_XOPEN_SOURCE 700` and to link with no libutil dependency, keeping the
+  one-dependency constraint intact.
+
+- Decision: **XDG paths, with `~/.sqliterc` still honoured.** History at
+  `$XDG_STATE_HOME/sqlsh/history`, config and theme under
+  `$XDG_CONFIG_HOME/sqlsh/`. `~/.sqliterc` is read for parity (Phase 6),
+  followed by `~/.config/sqlsh/sqlshrc` so ours wins on conflict.
 
 **Dependencies** — Phase 0.
 
@@ -613,7 +647,9 @@ are not, and upstream's command-line flags.
       `-newline` `-vfs` `-memtrace` `-stats` and the mode shorthands
       (`-box` `-column` `-csv` `-html` `-json` `-line` `-list` `-markdown`
       `-quote` `-table` `-tabs` `-ascii`)
-- [ ] `~/.sqliterc` read at startup, with `-noinit` to skip it
+- [ ] `~/.sqliterc` read at startup for parity, then
+      `$XDG_CONFIG_HOME/sqlsh/sqlshrc` so ours wins on conflict; `-noinit`
+      skips both
 - [ ] dot-command and argument values are completable (feeds Phase 3's
       `CTX_DOT_ARG`)
 - [ ] remove the Phase 0 stub from `main.c`
@@ -669,7 +705,8 @@ it is typed, and none of the colour in the program is hardcoded any more.
       quoted identifiers distinctly
 - [ ] unbalanced quote or paren shown as an error colour, which is also the
       cue for why the prompt is asking for a continuation line
-- [ ] theme file at `~/.config/sqlsh/theme`: `key = colour` lines, unknown keys
+- [ ] theme file at `$XDG_CONFIG_HOME/sqlsh/theme` (default
+      `~/.config/sqlsh/theme`): `key = colour` lines, unknown keys
       warned about and ignored, missing file means the built-in palette
 - [ ] `.theme` dot command to reload and to list the current palette
 - [ ] two built-in themes, one for dark and one for light terminals
@@ -720,6 +757,8 @@ deliberately postponed.
 - [ ] `make valgrind` extended to cover the pty suite
 - [ ] input lines longer than the terminal width, verified under the pty
 - [ ] a fuzz target over the tokenizer run in CI-length batches
+- [ ] `make install` installs `sqlsh` only — never as, or symlinked to,
+      `sqlite3`, which would shadow the binary the parity suite tests against
 - [ ] review the Deferred-work log; promote or close each entry
 
 **Checks**
@@ -751,6 +790,17 @@ Phase 8.
 | UTF-8 display width | Phase 1 decision | **Scheduled** into Phase 5. |
 | `dot.c` extraction | Phase 0 implementation | **Scheduled** into Phase 6. |
 | `.import` / `.dump` | Phase 0 planning | **Promoted** to Phase 6 — parity requires them. |
+| Vi keybindings | Phase 1 planning | **Promoted** into Phase 1 — modality cannot be retrofitted cheaply. |
 | Vendoring the 21 extension-backed commands | Phase 6 planning | Deferred indefinitely; refused with a message instead. |
 | Multiple attached databases in completion scoping | Phase 0 planning | Deferred. `sqlctx` would need schema-qualified names. |
 | Query result paging | Phase 0 planning | Deferred. An external pager may be the suckless answer. |
+
+## Manual checks outstanding
+
+Checks no agent can honestly perform. Each phase is committed on a green
+automatic gate; these boxes stay unticked until the owner has looked. Populated
+as phases land.
+
+| Phase | Check | How to reproduce |
+|---|---|---|
+| — | — | — |

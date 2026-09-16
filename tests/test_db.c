@@ -7,11 +7,10 @@
  */
 #include "db.h"
 #include "minunit.h"
+#include "suites.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-int tests_run = 0;
 
 /* Capture db_exec output into a buffer by way of a temporary file. Simpler and
  * more portable under C99 than open_memstream. */
@@ -206,7 +205,7 @@ static const char *test_write_failure(void)
     return NULL;
 }
 
-static const char *all_tests(void)
+const char *db_suite(void)
 {
     mu_run_test(test_open_close);
     mu_run_test(test_is_complete);
@@ -216,17 +215,4 @@ static const char *all_tests(void)
     mu_run_test(test_multi_statement);
     mu_run_test(test_write_failure);
     return NULL;
-}
-
-int main(void)
-{
-    const char *result = all_tests();
-
-    if (result != NULL) {
-        printf("FAIL: %s\n", result);
-    } else {
-        printf("All tests passed.\n");
-    }
-    printf("Tests run: %d\n", tests_run);
-    return result != NULL ? 1 : 0;
 }

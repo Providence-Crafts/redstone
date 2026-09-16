@@ -1,16 +1,17 @@
 /*
  * sqlsh - a minimal SQLite shell with zsh-style completion.
  *
- * Phase 0: argument handling and a plain REPL. The raw-mode line editor
- * (line.c) and the completion engine (sqlctx.c, comp.c, menu.c) replace
- * read_line below in later phases; see PROJECT.md.
+ * Argument handling and the REPL. Input comes from line.c, which edits when a
+ * terminal is attached and reads plainly otherwise. The completion engine
+ * (sqlctx.c, comp.c, menu.c) hooks into the editor in later phases; see
+ * PROJECT.md.
  */
 #include "db.h"
+#include "line.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #define SQLSH_VERSION "0.1.0"
 
@@ -60,29 +61,6 @@ static bool buffer_append(Buffer *buf, const char *text)
     return true;
 }
 
-/* Read one line from IN, without the trailing newline, into BUF.
- * Returns false at end of input. Phase 1 replaces this with line.c. */
-static bool read_line(FILE *in, Buffer *out)
-{
-    char chunk[512];
-    bool got_any = false;
-
-    buffer_clear(out);
-    while (fgets(chunk, (int)sizeof(chunk), in) != NULL) {
-        size_t n = strlen(chunk);
-
-        got_any = true;
-        if (n > 0u && chunk[n - 1u] == '\n') {
-            chunk[n - 1u] = '\0';
-            return buffer_append(out, chunk);
-        }
-        if (!buffer_append(out, chunk)) {
-            return false;
-        }
-    }
-    return got_any;
-}
-
 /* Trim leading whitespace; used to spot dot commands and blank lines. */
 static const char *skip_space(const char *text)
 {
@@ -94,7 +72,7 @@ static const char *skip_space(const char *text)
 
 /* Phase 5 moves this into dot.c with a proper command table.
  * Phase 0 recognises only what is needed to leave the shell. */
-static bool handle_dot_command(Db *db, const char *line, bool *quit, FILE *out, FILE *err)
+static bool handle_dot_command(Db *db, Line *ln, const char *line, bool *quit, FILE *out, FILE *err)
 {
     const char *cmd = skip_space(line);
 
@@ -103,7 +81,19 @@ static bool handle_dot_command(Db *db, const char *line, bool *quit, FILE *out, 
     }
     cmd++;
 
-    if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "exit") == 0) {
+    if (strncmp(cmd, "editor", 6u) == 0 && (cmd[6] == '\0' || cmd[6] == ' ')) {
+        const char *arg = skip_space(cmd + 6);
+
+        if (strcmp(arg, "vi") == 0) {
+            line_set_keymap(ln, EDIT_VI);
+        } else if (strcmp(arg, "emacs") == 0) {
+            line_set_keymap(ln, EDIT_EMACS);
+        } else if (*arg == '\0') {
+            fprintf(out, "%s\n", line_keymap(ln) == EDIT_VI ? "vi" : "emacs");
+        } else {
+            fprintf(err, "sqlsh: .editor takes emacs or vi\n");
+        }
+    } else if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "exit") == 0) {
         *quit = true;
     } else if (strcmp(cmd, "tables") == 0) {
         (void)db_exec(db,
@@ -121,6 +111,7 @@ static bool handle_dot_command(Db *db, const char *line, bool *quit, FILE *out, 
         fputs(".help    this message\n"
               ".tables  list tables and views\n"
               ".schema  show the schema\n"
+              ".editor emacs|vi  select the keymap\n"
               ".quit    exit\n"
               "\nCompletion is not implemented yet; see PROJECT.md.\n",
               out);
@@ -148,7 +139,7 @@ typedef enum { REPL_CONTINUE, REPL_QUIT, REPL_ERROR } ReplStep;
 /* Consume one input line. STMT accumulates lines until they form a complete
  * statement, which is then executed and cleared. A dot command is recognised
  * only at the start of a statement, so ".quit" inside a string is just text. */
-static ReplStep repl_feed(Db *db, Buffer *stmt, const char *text, bool interactive)
+static ReplStep repl_feed(Db *db, Line *ln, Buffer *stmt, const char *text, bool interactive)
 {
     bool quit = false;
 
@@ -156,7 +147,7 @@ static ReplStep repl_feed(Db *db, Buffer *stmt, const char *text, bool interacti
         if (*skip_space(text) == '\0') {
             return REPL_CONTINUE;
         }
-        if (handle_dot_command(db, text, &quit, stdout, stderr)) {
+        if (handle_dot_command(db, ln, text, &quit, stdout, stderr)) {
             return quit ? REPL_QUIT : REPL_CONTINUE;
         }
     }
@@ -179,29 +170,73 @@ static ReplStep repl_feed(Db *db, Buffer *stmt, const char *text, bool interacti
     return REPL_CONTINUE;
 }
 
-static void print_prompt(const Buffer *stmt, bool interactive)
+/* In vi mode the prompt says which state the editor is in, because an editor
+ * with hidden modes is the thing people hate about vi bindings. */
+static const char *prompt_for(const Line *ln, const Buffer *stmt, bool interactive)
 {
     if (!interactive) {
-        return;
+        return "";
     }
-    fputs(stmt->len > 0u ? "   ...> " : "sqlsh> ", stdout);
-    fflush(stdout);
+    if (stmt->len > 0u) {
+        return "   ...> ";
+    }
+    if (line_keymap(ln) == EDIT_VI) {
+        return line_vi_state(ln) == EDIT_VI_NORMAL ? "[n] sqlsh> " : "[i] sqlsh> ";
+    }
+    return "sqlsh> ";
 }
 
-static int run_repl(Db *db, bool interactive)
+/* Choose the keymap from $EDITOR, the way readline-based tools do, so a vi
+ * user gets vi mode without configuring anything. `.editor` overrides it in a
+ * later phase. */
+static EditKeymap keymap_from_env(void)
 {
-    Buffer line = {NULL, 0u, 0u};
+    const char *editor = getenv("VISUAL");
+
+    if (editor == NULL || *editor == '\0') {
+        editor = getenv("EDITOR");
+    }
+    if (editor == NULL) {
+        return EDIT_EMACS;
+    }
+    if (strstr(editor, "vi") != NULL || strstr(editor, "nvim") != NULL) {
+        return EDIT_VI;
+    }
+    return EDIT_EMACS;
+}
+
+static int run_repl(Db *db, Line *ln)
+{
     Buffer stmt = {NULL, 0u, 0u};
+    bool interactive = line_interactive(ln);
+    char *hist_path = interactive ? line_history_path() : NULL;
     int status = 0;
 
+    if (hist_path != NULL) {
+        (void)line_history_load(ln, hist_path);
+    }
+
     for (;;) {
+        LineStatus read_status = line_read(ln, prompt_for(ln, &stmt, interactive));
         ReplStep step;
 
-        print_prompt(&stmt, interactive);
-        if (!read_line(stdin, &line)) {
+        if (read_status == LINE_EOF) {
             break;
         }
-        step = repl_feed(db, &stmt, line.data != NULL ? line.data : "", interactive);
+        if (read_status == LINE_ERROR) {
+            fputs("sqlsh: input error\n", stderr);
+            status = 1;
+            break;
+        }
+        if (read_status == LINE_INTR) {
+            /* Ctrl-C abandons the statement under construction, not the
+             * session; that is what every other shell does. */
+            buffer_clear(&stmt);
+            continue;
+        }
+
+        (void)line_history_add(ln, line_text(ln));
+        step = repl_feed(db, ln, &stmt, line_text(ln), interactive);
         if (step == REPL_QUIT) {
             break;
         }
@@ -216,11 +251,11 @@ static int run_repl(Db *db, bool interactive)
         fputs("sqlsh: incomplete statement at end of input\n", stderr);
         status = 1;
     }
-    if (interactive) {
-        fputc('\n', stdout);
+    if (hist_path != NULL) {
+        (void)line_history_save(ln, hist_path);
+        free(hist_path);
     }
 
-    buffer_free(&line);
     buffer_free(&stmt);
     return status;
 }
@@ -232,7 +267,7 @@ int main(int argc, char **argv)
     int i;
     int first_sql = 0;
     int status = 0;
-    bool interactive;
+    Line *ln;
 
     for (i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -275,13 +310,21 @@ int main(int argc, char **argv)
         return status;
     }
 
-    interactive = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1;
-    if (interactive) {
+    ln = line_new(stdin, stdout);
+    if (ln == NULL) {
+        fputs("sqlsh: out of memory\n", stderr);
+        db_close(db);
+        return 1;
+    }
+    line_set_keymap(ln, keymap_from_env());
+
+    if (line_interactive(ln)) {
         printf("sqlsh %s connected to %s\n", SQLSH_VERSION, db_path(db));
         fputs("Enter SQL, or .help for commands, or .quit to exit.\n", stdout);
     }
 
-    status = run_repl(db, interactive);
+    status = run_repl(db, ln);
+    line_free(ln);
     db_close(db);
     return status;
 }

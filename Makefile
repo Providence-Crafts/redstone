@@ -111,8 +111,11 @@ ifeq ($(WARNINGS_AS_ERRORS),1)
   WARNING_FLAGS += -Werror
 endif
 
-# POSIX.1-2008 under -std=c99: termios, tcgetattr, isatty, sigaction.
-FEATURE_FLAGS = -D_POSIX_C_SOURCE=200809L
+# X/Open 7 under -std=c99, which subsumes POSIX.1-2008: termios, isatty and
+# sigaction, plus posix_openpt/grantpt/ptsname for the pty test harness.
+# Defined here rather than in the sources so no translation unit has to declare
+# a reserved identifier of its own.
+FEATURE_FLAGS = -D_XOPEN_SOURCE=700
 
 # -Isrc so tests can reach internal headers without a separate compile of the
 # same translation units.
