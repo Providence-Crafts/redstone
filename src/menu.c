@@ -1,6 +1,7 @@
 #include "menu.h"
 
 #include "theme.h"
+#include "width.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,49 +43,6 @@ struct Menu {
     size_t olen;
     size_t ocap;
 };
-
-/* --------------------------------------------------------------------------
- * Width
- * ------------------------------------------------------------------------ */
-
-/* Counts UTF-8 characters rather than bytes: continuation bytes occupy no
- * cell. Combining marks and double-width characters are not handled here —
- * that needs the tables Phase 5 brings — so a CJK column can be one cell
- * narrow. Names in a schema are overwhelmingly ASCII, and the failure mode is
- * cosmetic. */
-size_t menu_display_width(const char *s)
-{
-    size_t w = 0u;
-    size_t i;
-
-    if (s == NULL) {
-        return 0u;
-    }
-    for (i = 0u; s[i] != '\0'; i++) {
-        if (((unsigned char)s[i] & 0xc0u) != 0x80u) {
-            w++;
-        }
-    }
-    return w;
-}
-
-/* Bytes of S that fit in MAX cells, never splitting a character. */
-static size_t fit_bytes(const char *s, size_t max)
-{
-    size_t w = 0u;
-    size_t i = 0u;
-
-    while (s[i] != '\0') {
-        if (((unsigned char)s[i] & 0xc0u) != 0x80u) {
-            if (w == max) {
-                break;
-            }
-            w++;
-        }
-        i++;
-    }
-    return i;
-}
 
 /* --------------------------------------------------------------------------
  * Output buffer
@@ -233,10 +191,10 @@ void menu_set_size(Menu *m, unsigned cols, unsigned rows)
 
 static size_t item_width(const Comp *c)
 {
-    size_t w = menu_display_width(c->display);
+    size_t w = width_of(c->display);
 
     if (c->detail != NULL && c->detail[0] != '\0') {
-        w += MENU_GAP + menu_display_width(c->detail);
+        w += MENU_GAP + width_of(c->detail);
     }
     return w;
 }
@@ -474,16 +432,16 @@ static ThemeStyle style_of(CompKind kind)
  * layering colour on top of it is what makes a menu look busy. */
 static bool emit_name(Menu *m, const Comp *c, bool selected, size_t cut)
 {
-    size_t plen = menu_display_width(comp_prefix(m->list));
+    size_t plen = width_of(comp_prefix(m->list));
     size_t pbytes;
 
     if (selected) {
         return emit_n(m, c->display, cut);
     }
-    if (plen == 0u || plen > menu_display_width(c->display)) {
+    if (plen == 0u || plen > width_of(c->display)) {
         return emit(m, theme_sgr(style_of(c->kind))) && emit_n(m, c->display, cut);
     }
-    pbytes = fit_bytes(c->display, plen);
+    pbytes = width_fit(c->display, plen);
     if (pbytes > cut) {
         pbytes = cut;
     }
@@ -501,13 +459,13 @@ static size_t emit_detail(Menu *m, const Comp *c, bool selected, size_t room, bo
     if (c->detail == NULL || c->detail[0] == '\0' || room <= MENU_GAP) {
         return 0u;
     }
-    cut = fit_bytes(c->detail, room - MENU_GAP);
+    cut = width_fit(c->detail, room - MENU_GAP);
     if (cut == 0u) {
         return 0u;
     }
     *ok = emit_pad(m, MENU_GAP) && (selected || emit(m, theme_sgr(THEME_DETAIL))) &&
           emit_n(m, c->detail, cut);
-    return MENU_GAP + menu_display_width(c->detail);
+    return MENU_GAP + width_of(c->detail);
 }
 
 /* One cell of the grid, padded to the full width. The selected cell is padded
@@ -517,14 +475,14 @@ static bool emit_item(Menu *m, size_t idx, bool last_in_row)
     const Comp *c = comp_at(m->list, idx);
     bool selected = idx == m->sel;
     size_t avail = m->cellw;
-    size_t dispw = menu_display_width(c->display);
+    size_t dispw = width_of(c->display);
     size_t used = dispw < avail ? dispw : avail;
     bool ok = true;
 
     if (selected && !emit(m, theme_sgr(THEME_SELECTED))) {
         return false;
     }
-    if (!emit_name(m, c, selected, fit_bytes(c->display, avail))) {
+    if (!emit_name(m, c, selected, width_fit(c->display, avail))) {
         return false;
     }
     used += emit_detail(m, c, selected, avail - used, &ok);

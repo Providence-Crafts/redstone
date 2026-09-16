@@ -31,6 +31,13 @@ typedef enum {
     THEME_PRAGMA,
     THEME_KEYWORD,
     THEME_DOT,
+    /* Result values, by storage class, plus the column titles above them. */
+    THEME_HEADER,
+    THEME_NULL,
+    THEME_INTEGER,
+    THEME_REAL,
+    THEME_STRING,
+    THEME_BLOB,
     THEME_STYLE_COUNT
 } ThemeStyle;
 

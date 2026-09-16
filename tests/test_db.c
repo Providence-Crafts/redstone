@@ -55,8 +55,10 @@ static const char *test_open_close(void)
 
     mu_assert("in-memory open failed", db != NULL);
     mu_assert("path should be :memory:", strcmp(db_path(db), ":memory:") == 0);
-    mu_assert("default mode should be column", db_mode(db) == DB_MODE_COLUMN);
-    mu_assert("headers should default on", db_headers(db));
+    /* db.c no longer owns a mode of its own: a freshly opened Db formats
+     * through db_out(), which out_new() starts in "box" with headers on. */
+    mu_assert("default mode should be box", strcmp(out_mode_name(db_out(db)), "box") == 0);
+    mu_assert("headers should default on", out_headers(db_out(db)));
     db_close(db);
 
     db_close(NULL); /* must not crash */
@@ -90,19 +92,19 @@ static const char *test_exec_and_modes(void)
     mu_assert("INSERT should succeed", ok);
     free(out);
 
-    db_set_mode(db, DB_MODE_LIST);
-    db_set_headers(db, false);
+    out_set_mode(db_out(db), "list");
+    out_set_headers(db_out(db), false);
     out = exec_capture(db, "SELECT a, b FROM t ORDER BY a;", &ok);
     mu_assert("SELECT should succeed", ok);
     mu_assert("list output wrong", out != NULL && strcmp(out, "1|x\n2|\n") == 0);
     free(out);
 
-    db_set_null_text(db, "NULL");
+    out_set_null_text(db_out(db), "NULL");
     out = exec_capture(db, "SELECT a, b FROM t ORDER BY a;", &ok);
     mu_assert("null text not applied", out != NULL && strcmp(out, "1|x\n2|NULL\n") == 0);
     free(out);
 
-    db_set_separator(db, ",");
+    out_set_colsep(db_out(db), ",");
     out = exec_capture(db, "SELECT a, b FROM t WHERE a = 1;", &ok);
     mu_assert("separator not applied", out != NULL && strcmp(out, "1,x\n") == 0);
     free(out);
@@ -118,13 +120,15 @@ static const char *test_csv_quoting(void)
     bool ok = false;
 
     mu_assert("open failed", db != NULL);
-    db_set_mode(db, DB_MODE_CSV);
-    db_set_headers(db, false);
+    out_set_mode(db_out(db), "csv");
+    out_set_headers(db_out(db), false);
 
     out = exec_capture(db, "SELECT 'a,b', 'say \"hi\"', 'plain';", &ok);
     mu_assert("csv select failed", ok);
+    /* csv's row separator is CRLF (out.c's preset table), unlike list's bare
+     * "\n", so the expected bytes carry the \r too. */
     mu_assert("csv quoting wrong",
-              out != NULL && strcmp(out, "\"a,b\",\"say \"\"hi\"\"\",plain\n") == 0);
+              out != NULL && strcmp(out, "\"a,b\",\"say \"\"hi\"\"\",plain\r\n") == 0);
     free(out);
 
     db_close(db);
@@ -155,8 +159,8 @@ static const char *test_multi_statement(void)
     bool ok = false;
 
     mu_assert("open failed", db != NULL);
-    db_set_mode(db, DB_MODE_LIST);
-    db_set_headers(db, false);
+    out_set_mode(db_out(db), "list");
+    out_set_headers(db_out(db), false);
 
     out = exec_capture(db, "CREATE TABLE m (x); INSERT INTO m VALUES (7); SELECT x FROM m;", &ok);
     mu_assert("multi-statement exec failed", ok);
@@ -182,7 +186,7 @@ static const char *test_write_failure(void)
     bool ok = true;
 
     if (have_full) {
-        db_set_mode(db, DB_MODE_LIST);
+        out_set_mode(db_out(db), "list");
         ok = db_exec(db, "SELECT 'a long enough row to force a flush';", full, sink);
     }
 

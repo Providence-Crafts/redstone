@@ -11,6 +11,7 @@
 #include "minunit.h"
 #include "suites.h"
 #include "theme.h"
+#include "width.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -91,12 +92,15 @@ static size_t widest_line(const char *s)
     return w > widest ? w : widest;
 }
 
+/* menu_display_width was folded into width.h's width_of in Phase 5 (see the
+ * note in menu.h); this test now exercises that shared function directly
+ * rather than duplicating width logic in the menu. */
 static const char *test_display_width(void)
 {
-    mu_assert("ascii width wrong", menu_display_width("select") == 6u);
-    mu_assert("utf-8 width should count characters", menu_display_width("caf\xc3\xa9") == 4u);
-    mu_assert("empty width wrong", menu_display_width("") == 0u);
-    mu_assert("NULL width wrong", menu_display_width(NULL) == 0u);
+    mu_assert("ascii width wrong", width_of("select") == 6u);
+    mu_assert("utf-8 width should count characters", width_of("caf\xc3\xa9") == 4u);
+    mu_assert("empty width wrong", width_of("") == 0u);
+    mu_assert("NULL width wrong", width_of(NULL) == 0u);
     return NULL;
 }
 

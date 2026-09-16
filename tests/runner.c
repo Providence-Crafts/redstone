@@ -26,6 +26,12 @@ static const char *all_tests(void)
     if (msg == NULL) {
         msg = line_suite();
     }
+    if (msg == NULL) {
+        msg = out_suite();
+    }
+    if (msg == NULL) {
+        msg = width_suite();
+    }
     return msg;
 }
 

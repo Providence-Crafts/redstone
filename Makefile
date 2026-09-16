@@ -130,7 +130,7 @@ TEST_SRCS = $(wildcard $(TEST_DIR)/*.c)
 TEST_OBJS = $(patsubst $(TEST_DIR)/%.c, $(BUILD_DIR)/tests/%.o, $(TEST_SRCS))
 
 .PHONY: all release debug asan msan binary test run-tests fixtures reference \
-        valgrind tidy cppcheck format format-check gate compdb watch \
+        valgrind tidy cppcheck format format-check parity gate compdb watch \
         install clean help
 
 all: debug
@@ -266,6 +266,12 @@ format-check:
 	              $(wildcard $(INC_DIR)/*.h) $(wildcard $(TEST_DIR)/*.c) \
 	              $(wildcard $(TEST_DIR)/*.h)
 
+# Differential output-parity suite against sqlite3(1) (see tests/parity.sh).
+# Skips cleanly when sqlite3 is absent; SKIP_PARITY=1 skips it unconditionally
+# for whoever needs to run the gate without it.
+parity: $(BIN_DIR)/$(TARGET_NAME)
+	sh $(TEST_DIR)/parity.sh $(BIN_DIR)/$(TARGET_NAME)
+
 # One command, one verdict. This is the phase gate: a phase is not done until
 # `make gate` prints PASS. Every step below fails the build on any finding, so
 # a warning is a defect rather than something to read past.
@@ -279,6 +285,9 @@ gate:
 	@echo "== gate: build (vendored) =="; $(MAKE) --no-print-directory clean
 	@$(MAKE) --no-print-directory SQLITE=vendored release WARNINGS_AS_ERRORS=1
 	@echo "== gate: tests (asan+ubsan) =="; $(MAKE) --no-print-directory test
+ifneq ($(SKIP_PARITY),1)
+	@echo "== gate: parity ==";    $(MAKE) --no-print-directory parity
+endif
 	@echo "== gate: cppcheck ==";  $(MAKE) --no-print-directory cppcheck
 	@echo "== gate: clang-tidy =="; $(MAKE) --no-print-directory tidy
 	@echo "PASS"
@@ -321,7 +330,9 @@ help:
 	@echo "  make fixtures         regenerate tests/test.db"
 	@echo "  make reference        fetch sqlite shell.c into reference/"
 	@echo "  make SQLITE=vendored  build against the sqlite amalgamation"
+	@echo "  make parity           differential output-parity suite vs sqlite3(1)"
 	@echo "  make tidy cppcheck format compdb valgrind watch"
 	@echo "  make install PREFIX=~/.local"
+	@echo "  make gate SKIP_PARITY=1   skip the parity suite in the gate"
 	@echo ""
 	@echo "Objects live in build/<backend>/<mode>/ so builds never share stale objects."

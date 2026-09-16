@@ -88,7 +88,9 @@ main.c      argument parsing (upstream flag set), REPL driver, signals
   |
   +-- dot.c     dot-command table and dispatch: 44 implemented, 21 refused
   |     |
-  |     +-- out.c    the 13 output modes, box drawing, type-aware colour
+  |     +-- out.c    the 22 output-mode presets, box drawing, type-aware colour
+  |           |
+  |           +-- width.c   UTF-8 display width, also used by menu.c
   |
   +-- line.c    raw-mode line editor: keys, cursor, history, redraw
   |     |
@@ -103,6 +105,12 @@ main.c      argument parsing (upstream flag set), REPL driver, signals
   +-- db.c      sqlite3 handle, statement execution, schema introspection,
                 the value cache
 ```
+
+`out.c` sits under `db.c` in the include order, not above it: `db.c` hands it
+typed values and column names and decides nothing about appearance, and nothing
+above `db.c` includes `<sqlite3.h>`. That split is what lets the formatter be
+tested on synthetic rows, and what lets the differential parity suite treat the
+whole pipeline as one function from query to bytes.
 
 `sqlctx.c` and `comp.c` are pure with respect to the terminal: they take a
 buffer and a cursor offset and return data. That is what makes the completion

@@ -16,7 +16,7 @@ references:
   - "docs/development-workflow.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phases 0-4 complete and gate-green. Phase 5 (out.c) next."
+notes: "Phases 0-5 complete and gate-green. Phase 6 (dot.c) next."
 ---
 
 # sqlsh
@@ -36,7 +36,8 @@ constraints: one library dependency, a small auditable codebase, no speculative
 abstraction. The environment is a pinned Nix flake.
 
 **Scope.** Everything `sqlite3(1)` does that is reachable through the public C
-API — 44 of its 65 dot commands, all 13 output modes, and its command-line
+API — 44 of its 65 dot commands, all 22 output-mode presets its binary
+accepts, and its command-line
 flags — plus completion, colour and theming. The ~21 dot commands backed by
 vendored extensions or internal APIs are recognised and refused with a pointer
 to `sqlite3(1)`, never silently missing.
@@ -69,8 +70,8 @@ to `sqlite3(1)`, never silently missing.
   `<tab>` · `.tables <tab>` · `SELECT <tab> FROM <tab>` · `WHERE <tab>`.
 - Every one of the 44 portable dot commands has a test asserting its effect;
   every one of the 21 unsupported commands is refused with a useful message.
-- `sqlsh --compat` output is byte-identical to `sqlite3(1)` across the mode
-  matrix, verified by differential test.
+- `sqlsh --compat` output is byte-identical to `sqlite3(1)` across the classic
+  mode matrix, verified by differential test in the gate.
 - `make gate` prints PASS: formatter, both builds, sanitized tests, cppcheck
   and clang-tidy clean, zero warnings.
 - Total `src/` stays under roughly 6,000 lines. Upstream `shell.c` is 37,373.
@@ -160,7 +161,10 @@ this list.
 | `cert-err33-c` | `.clang-tidy` | `fputc`/`fprintf` returns are unchecked by design; `db_exec` does one `fflush`+`ferror` per statement instead, since stream errors are sticky. |
 | `missingIncludeSystem`, `unusedFunction`, `checkersReport`, `toomanyconfigs` | `Makefile` cppcheck | Statements about cppcheck's own analysis or about sqlite3.h, not about `src/`. `unusedFunction` is false on a two-binary build. |
 | `readability-function-cognitive-complexity` | `tests/.clang-tidy` | Counts the branch minunit's `mu_run_test` expands to, so the score is just the test count. Splitting suites to satisfy it would hurt readability. Test code only; `src/` still obeys the check. |
+| `constParameterPointer` on `db_out` | `src/db.c`, inline | The `Db` is not const to the caller: `db_out` exists to hand out a formatter the caller then reconfigures. Const-qualifying the parameter would launder that away. |
+| `staticFunction` on `out_set_table_name` | `src/out.c`, inline | One of `out.h`'s uniform setter family. Only `out_command` calls it inside the module today; `.import` in phase 6 will call it from `dot.c`. |
 | `constParameterCallback` on `value_progress` | `src/db.c`, inline | `sqlite3_progress_handler` dictates the `void *` signature; const-qualifying it would need a function-pointer cast, which is worse. |
+| `clang-format` on `g_width[]` and `g_preset[]` | `src/width.c`, `src/out.c`, inline `clang-format off` | Both are hand-aligned data tables — a width range and a mode preset are read across a row. Reflowing them to 100 columns destroys the grid and nothing else. |
 | `_FORTIFY_SOURCE` glibc `#warning` | `flake.nix` `hardeningDisable`, `Makefile` `TIDY_EXTRA` | nix's cc-wrapper injects it; glibc then warns at the `-O0` used by debug and compdb builds. Environmental, not ours. |
 
 ## Architecture
@@ -176,7 +180,9 @@ main.c      argument parsing (upstream flag set), REPL driver, signals
   |
   +-- dot.c     dot-command table and dispatch (44 + 21 refusals)
   |     |
-  |     +-- out.c    the 13 output modes, box drawing, colour
+  |     +-- out.c    the output modes, box drawing, colour
+  |           |
+  |           +-- width.c  UTF-8 display width, shared with menu.c
   |
   +-- line.c    raw-mode line editor: keys, cursor, history, redraw
   |     |
@@ -583,47 +589,57 @@ struct, so `line.c` never sees a database handle. 73 tests, gate PASS.
 
 ---
 
-### Phase 5: Output modes, colour and compatibility `[ ]`
+### Phase 5: Output modes, colour and compatibility `[x]`
 
 **Description**
 
-`src/out.c` and `src/theme.c`. All 13 upstream output modes, the beautiful
-defaults, and the switch that makes the shell byte-compatible when asked.
+`src/out.c`, `src/width.c` and `src/theme.c`. Upstream's output modes, the
+beautiful defaults, and the switch that makes the shell byte-compatible when
+asked.
 
 Formatting moves out of `db.c`, which keeps the handle, execution and
-introspection.
+introspection. Nothing above `db.c` includes `<sqlite3.h>`, and `db.c` itself
+decides nothing about appearance.
 
 **Tasks**
 
-- [ ] all 13 modes: `ascii` `box` `column` `csv` `html` `insert` `json` `line`
-      `list` `markdown` `quote` `table` `tabs`
-- [ ] `.mode` option flags: `--wrap` `--wordwrap` `--quote` `--noquote`
+- [x] the 13 classic modes: `ascii` `box` `column` `csv` `html` `insert` `json`
+      `line` `list` `markdown` `quote` `table` `tabs`
+- [x] the remaining presets 3.53.3 accepts: `c` `count` `jatom` `jobject` `off`
+      `psql` `qbox` `split` `tcl` — 22 in total (see Notes on `www`)
+- [x] `.mode` option flags: `--wrap` `--wordwrap` `--ww` `--quote` `--noquote`
       `--colsep` `--rowsep` `--escape` `--border` `--align` `--charlimit`
-      `--linelimit` `--titlelimit` `--tablename` `--multiinsert` `--blob-quote`
-- [ ] Unicode box drawing with ASCII fallback when the locale is not UTF-8
-- [ ] UTF-8 display width (wide and combining characters) for alignment
-- [ ] `theme.c`: capability detection honouring `NO_COLOR`, `TERM=dumb` and
+      `--linelimit` `--titlelimit` `--limits` `--tablename` `--multiinsert`
+      `--blob-quote` `--title` `--nulls`
+- [x] Unicode box drawing with ASCII fallback when the locale is not UTF-8
+- [x] UTF-8 display width (wide and combining characters) for alignment —
+      `width.c`, shared with the completion menu
+- [x] `theme.c`: capability detection honouring `NO_COLOR`, `TERM=dumb` and
       non-tty; a default palette with headers bold, NULLs dim, and integers,
       reals, text and blobs distinguished
-- [ ] **pretty by default**: interactive *and* piped output uses `box` with
+- [x] **pretty by default**: interactive *and* piped output uses `box` with
       headers and colour where the terminal supports it
-- [ ] `--compat` (and `-compat`): restores upstream defaults exactly — `list`
+- [x] `--compat` (and `-compat`): restores upstream defaults exactly — `list`
       mode, `|` separator, headers off, no colour, no box
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] **differential suite**: for every mode × a fixture query matrix,
-      `sqlsh --compat` output is byte-identical to `sqlite3(1)` run with the
-      same commands. This is the parity oracle and runs in the gate.
-- [ ] without `--compat`, output is box-formatted with headers — asserted
+- [x] `make gate` → PASS
+- [x] **differential suite**: `tests/parity.sh` runs 8 fixture queries across
+      the 13 classic modes, plus a headers-on/off pass, and diffs
+      `sqlsh --compat` byte-for-byte against `sqlite3(1)`. 112 checks, all
+      passing. Wired into the gate; skippable only with an explicit
+      `SKIP_PARITY=1`.
+- [x] without `--compat`, output is box-formatted with headers — asserted
       positively, so a regression to upstream defaults fails
-- [ ] `NO_COLOR=1` and `TERM=dumb` each produce no SGR sequences
-- [ ] a CJK string and a combining-character string align correctly in `box`
+- [x] no SGR sequence is emitted when colour is off, asserted on `box` and
+      `list` output over an int/text/NULL row. `NO_COLOR` and `TERM=dumb`
+      themselves are covered a layer down, in the `theme` and `menu` suites.
+- [x] a CJK string and a combining-character string align correctly in `box`
       and `column` (byte-compare against expected)
-- [ ] `LC_ALL=C` falls back to ASCII borders, still aligned
+- [x] `LC_ALL=C` falls back to ASCII borders, still aligned
 
 *Manual*
 
@@ -645,10 +661,67 @@ introspection.
 - Decision: **`-compat` is free in the upstream flag set** (checked against
   `sqlite3 --help`), so it collides with nothing.
 
-**Dependencies** — Phase 0. Phase 4 consumes `theme.c`, so if Phase 4 runs
-first it lands with a minimal palette that this phase completes.
+- Decision: **Own formatter, classic subset exact.** `out.c` is written from
+  the spec rather than transliterated from `shell.c`. Byte parity is
+  *guaranteed and gate-enforced* for the 13 classic modes; the other nine are
+  best-effort, since they are rare and several have no stable contract.
+  Rationale: a transliteration would drag upstream's global state and its
+  30-year accretion into a module meant to be readable in one sitting, and the
+  differential suite pins the behaviour that actually matters either way.
+  Alternatives: vendor upstream's renderer wholesale (exact everywhere, but
+  unreadable and unowned); parity for every mode (weeks of work for modes
+  nobody runs).
+  Trade-offs: a script relying on `--compat -jatom` could see a difference.
+  Recorded as a known gap below rather than silently ignored.
 
----
+- Decision: **The linked 3.53.3 binary is the parity oracle, not
+  `reference/shell.c`.** The reference file is a trunk snapshot and disagrees
+  with the shipped binary in at least two places (`www`; `html` NULL text).
+  Where they differ, the binary wins and the difference is recorded in
+  `docs/notes/phase5-parity-findings.md`.
+
+**Known gaps**
+
+| Gap | Why | Escape hatch |
+|---|---|---|
+| Byte parity is asserted only for the 13 classic modes | `count` `jatom` `jobject` `off` `psql` `qbox` `split` `tcl` `c` are rare and several have no stable output contract | `sqlite3(1)` itself, for a script that needs one of them exactly |
+| `www` mode is absent | 3.53.3's binary rejects `.mode www` ("unknown mode") although trunk `shell.c` carries the preset. Implementing it would mean shipping behaviour our own oracle calls an error | Add the preset row when a release actually accepts it |
+| `-insert`, `-tcl`, `-qbox` are refused as *command-line* flags | Upstream accepts them only via `.mode`, not on the command line; accepting them would be a parity break in the permissive direction | `.mode insert` etc. once the shell is running |
+| A blob containing an embedded NUL prints truncated under `--blob-quote text` | The mode asks for the bytes as text, and C strings end at the NUL. Upstream truncates identically | `--blob-quote hex` or `sql` |
+
+**Dependencies** — Phase 0. Phase 4 consumed `theme.c`, so it landed with a
+minimal palette that this phase completes.
+
+**Notes / Risks**
+
+Two real bugs were paid for during the differential work, both found by the
+suite rather than by reading: `width_char` searched its table with unsigned
+indices, so `last - 1` wrapped at index 0 and the search spun forever on a
+combining mark; and the streaming styles increment the row count without
+allocating cells, which made `free_result` walk a NULL array (found by
+`make asan`). Both are now covered by unit tests.
+
+**Outcome.** `out.c` is one spec with 22 presets over it, not 22 renderers:
+a style, three encodings (text, title, blob), a control-character escape, the
+separators, the border, per-column widths and alignments, and four limits.
+Adding a mode is adding a row to `g_preset[]`. The encoders compose the way
+upstream's do — every encoder's output goes through the control-character
+escape, which is the rule that took longest to find and fixed `insert`,
+`quote` and `csv` at once.
+
+The differential suite is what made this tractable: 112 byte-exact diffs
+against the real `sqlite3` turned parity from a reading exercise into a
+failing test, and it is now a gate step, so a future change to a shared
+encoder cannot quietly break a mode nobody was looking at. It also settled
+three questions the source could not: `.mode www` is rejected by the shipped
+binary, `html` prints `null` regardless of `-nullvalue`, and the command-line
+mode flags are a strict subset of the `.mode` names.
+
+`width.c` came out of the columnar work and immediately replaced the private
+width helper in `menu.c` — along with its truncation companion, which shared
+the same width model and would have desynced from it. `db.c` lost ~360 lines
+and now decides nothing about appearance. 104 tests, 112 parity checks, gate
+PASS.
 
 ### Phase 6: Dot-command and CLI parity `[ ]`
 
@@ -832,4 +905,5 @@ as phases land.
 
 | Phase | Check | How to reproduce |
 |---|---|---|
+| 5 | The default output is genuinely nicer to read than `sqlite3(1)`'s | `make && ./bin/sqlsh tests/test.db`, then `SELECT * FROM employees LIMIT 20;`. Compare against `sqlite3 tests/test.db` running the same query, and against `./bin/sqlsh --compat`. Check a NULL-heavy and a blob-heavy table too. |
 | 4 | The menu feels like zsh's: no flicker, correct placement near the bottom of the screen, readable columns | `make && ./bin/sqlsh tests/test.db`, then type `SELECT * FROM ` and press Tab. Repeat with the window scrolled so the prompt is on the last row, and with a narrow window. |

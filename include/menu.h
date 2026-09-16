@@ -45,8 +45,4 @@ void menu_move(Menu *m, MenuMove move);
  * "" with *rows 0 when the menu is inactive. */
 const char *menu_render(Menu *m, unsigned *rows);
 
-/* Display width of a UTF-8 string in terminal cells. Exposed because the menu
- * is the first module that needs it; Phase 5's output layer takes it over. */
-size_t menu_display_width(const char *s);
-
 #endif /* SQLSH_MENU_H */

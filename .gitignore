@@ -13,3 +13,6 @@ compile_commands.json
 # Local/user databases: companies.db is a symlink into the user's notes.
 companies.db
 test.db
+
+# clangd index, written by the editor.
+/.cache/

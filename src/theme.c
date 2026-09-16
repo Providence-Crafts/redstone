@@ -22,7 +22,13 @@ static const char *const g_sgr[THEME_STYLE_COUNT] = {
     "\x1b[38;5;141m",   /* FUNCTION */
     "\x1b[38;5;108m",   /* PRAGMA */
     "\x1b[38;5;110m",   /* KEYWORD */
-    "\x1b[38;5;215m"    /* DOT */
+    "\x1b[38;5;215m",   /* DOT */
+    "\x1b[1;38;5;252m", /* HEADER */
+    "\x1b[38;5;244m",   /* NULL: dim, so an absent value recedes */
+    "\x1b[38;5;215m",   /* INTEGER */
+    "\x1b[38;5;216m",   /* REAL */
+    "\x1b[38;5;151m",   /* STRING */
+    "\x1b[38;5;139m"    /* BLOB */
 };
 
 static bool g_colour = false;

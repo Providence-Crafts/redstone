@@ -7,18 +7,10 @@
 #ifndef SQLSH_DB_H
 #define SQLSH_DB_H
 
+#include "out.h"
+
 #include <stdbool.h>
 #include <stdio.h>
-
-/* Output formats for query results. Mirrors the useful subset of sqlite3's
- * .mode, without the formats nobody reads interactively. */
-typedef enum {
-    DB_MODE_COLUMN = 0, /* aligned columns, the interactive default */
-    DB_MODE_LIST,       /* values separated by DB_SEPARATOR */
-    DB_MODE_CSV,
-    DB_MODE_JSON,
-    DB_MODE_LINE /* one "column = value" per line */
-} DbMode;
 
 typedef struct Db Db;
 
@@ -45,18 +37,10 @@ const char *db_path(const Db *db);
  * that no module above db.c needs to include <sqlite3.h>. */
 const char *db_sqlite_version(void);
 
-void db_set_mode(Db *db, DbMode mode);
-DbMode db_mode(const Db *db);
-
-void db_set_headers(Db *db, bool on);
-bool db_headers(const Db *db);
-
-/* Separator used by DB_MODE_LIST. Copied; defaults to "|". */
-void db_set_separator(Db *db, const char *sep);
-
-/* Text printed for SQL NULL. Copied; defaults to "" in column mode. */
-void db_set_null_text(Db *db, const char *text);
-const char *db_null_text(const Db *db);
+/* How results are formatted. Owned by the Db and never NULL; callers set the
+ * mode, headers and separators through out.h rather than through db.h,
+ * because formatting is not the executor's business. */
+Out *db_out(Db *db);
 
 /* --------------------------------------------------------------------------
  * Introspection
