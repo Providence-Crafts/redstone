@@ -1,0 +1,24 @@
+# Clangd Language Server Configuration
+CompileFlags:
+  Add:
+    - "-std=c99"
+    - "-Wall"
+    - "-Wextra"
+    - "-Wpedantic"
+    - "-Iinclude"
+  CompilationDatabase: "."
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add:
+      - bugprone-*
+      - cert-*
+      - performance-*
+      - readability-*
+
+InlayHints:
+  Designators: true
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true

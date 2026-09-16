@@ -1,0 +1,15 @@
+/build/
+/bin/
+/reference/
+compile_commands.json
+.direnv/
+*.o
+*.d
+*.so
+*.a
+*.out
+*.log
+
+# Local/user databases: companies.db is a symlink into the user's notes.
+companies.db
+test.db

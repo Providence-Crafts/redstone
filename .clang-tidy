@@ -1,0 +1,50 @@
+# Clang-Tidy configuration for sqlsh.
+#
+# Disabled checks, and why (comments must live outside the folded `Checks:`
+# scalar below, or they become part of the check list):
+#
+#   readability-identifier-length      short loop/param names are fine
+#   readability-magic-numbers          buffer sizes and caps read better inline
+#   readability-uppercase-literal-suffix
+#                                      lowercase 0u/1ul is the prevailing C
+#                                      idiom; the rule exists for the l/1
+#                                      ambiguity, which u does not have
+#   misc-include-cleaner               fights the convention that a module
+#                                      header owns the includes its own
+#                                      declarations need
+#   bugprone-easily-swappable-parameters
+#                                      (FILE *out, FILE *err) and similar are
+#                                      deliberate and read clearly at call sites
+#
+#   cert-err33-c                     would require checking the return of
+#                                      every fputc/fputs/fprintf. Stream errors
+#                                      are sticky, so db_exec checks ferror()
+#                                      once per statement instead, which catches
+#                                      EPIPE and ENOSPC without burying the
+#                                      formatting code in error handling
+#
+# HeaderFilterRegex is anchored on the project directory: a bare 'include/.*'
+# also matches /nix/store/<pkg>-dev/include/, which reports warnings from
+# sqlite3.h and glibc that we neither own nor can fix.
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix,
+  -misc-include-cleaner,
+  -bugprone-easily-swappable-parameters,
+  -cert-err33-c
+
+WarningsAsErrors: ''
+HeaderFilterRegex: 'sqlite-cli/(include|src|tests)/[^/]*\.h$'
+FormatStyle: file
+CheckOptions:
+  - key: readability-implicit-bool-conversion.AllowPointerConditions
+    value: 1
