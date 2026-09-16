@@ -16,7 +16,7 @@ references:
   - "docs/development-workflow.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phases 0-2 complete and gate-green. Phase 3 (comp.c) next."
+notes: "Phases 0-3 complete and gate-green. Phase 4 (menu.c) next."
 ---
 
 # sqlsh
@@ -159,6 +159,8 @@ this list.
 | `bugprone-easily-swappable-parameters` | `.clang-tidy` | Fires on every `(stmt, ncol, out)`; the fix would be worse than the risk. |
 | `cert-err33-c` | `.clang-tidy` | `fputc`/`fprintf` returns are unchecked by design; `db_exec` does one `fflush`+`ferror` per statement instead, since stream errors are sticky. |
 | `missingIncludeSystem`, `unusedFunction`, `checkersReport`, `toomanyconfigs` | `Makefile` cppcheck | Statements about cppcheck's own analysis or about sqlite3.h, not about `src/`. `unusedFunction` is false on a two-binary build. |
+| `readability-function-cognitive-complexity` | `tests/.clang-tidy` | Counts the branch minunit's `mu_run_test` expands to, so the score is just the test count. Splitting suites to satisfy it would hurt readability. Test code only; `src/` still obeys the check. |
+| `constParameterCallback` on `value_progress` | `src/db.c`, inline | `sqlite3_progress_handler` dictates the `void *` signature; const-qualifying it would need a function-pointer cast, which is worse. |
 | `_FORTIFY_SOURCE` glibc `#warning` | `flake.nix` `hardeningDisable`, `Makefile` `TIDY_EXTRA` | nix's cc-wrapper injects it; glibc then warns at the `-O0` used by debug and compdb builds. Environmental, not ours. |
 
 ## Architecture
@@ -205,7 +207,7 @@ nothing more.
 | `src/edit.c` · `include/edit.h` | implemented | The editing core: buffer, cursor, emacs and vi keymaps, history ring. Performs no I/O, so every keybinding is unit-testable. |
 | `src/line.c` · `include/line.h` | implemented | Terminal layer: termios raw mode, signal-safe restoration, redraw, escape timeout, history file. |
 | `src/sqlctx.c` · `include/sqlctx.h` | implemented | Tokenizer and cursor-context machine. Pure: no allocation, no I/O, no recursion. Phase 7's highlighter reuses the lexer. |
-| `src/comp.c` | Phase 3 | Context → candidate list. Pure given a `Db`. |
+| `src/comp.c` · `include/comp.h` | implemented | Context → candidate list. Pure given a `Db`: no terminal, no globals. The dot-command table is injected as a `CompDotSource`, so Phase 6 owns it alone. |
 | `src/menu.c` | Phase 4 | The navigable menu. |
 | `src/out.c` | Phase 5 | 13 output modes, box drawing, type-aware colour. |
 | `src/theme.c` | Phase 5 | Colour capability detection; theme file in Phase 7. |
@@ -466,7 +468,7 @@ query means. Phase 7's highlighter reuses this tokenizer unchanged.
 
 ---
 
-### Phase 3: Candidate generation `[ ]`
+### Phase 3: Candidate generation `[x]`
 
 **Description**
 
@@ -476,31 +478,31 @@ offer the columns of `companies`, not every column in the database.
 
 **Tasks**
 
-- [ ] schema introspection: tables, views, indexes, columns, types; cached,
+- [x] schema introspection: tables, views, indexes, columns, types; cached,
       invalidated when a statement modifies the schema
-- [ ] runtime-enumerated sources: keywords (`sqlite3_keyword_name`), functions
+- [x] runtime-enumerated sources: keywords (`sqlite3_keyword_name`), functions
       (`pragma_function_list`), pragmas (`pragma_pragma_list`)
-- [ ] candidate source per context, alias-qualified where relevant
-- [ ] prefix filtering: case-insensitive match, case-preserving insertion
-- [ ] value completion: `SELECT DISTINCT <col> FROM <tbl> LIMIT 200`,
+- [x] candidate source per context, alias-qualified where relevant
+- [x] prefix filtering: case-insensitive match, case-preserving insertion
+- [x] value completion: `SELECT DISTINCT <col> FROM <tbl> LIMIT 200`,
       identifiers quoted, aborted after ~150 ms by a
       `sqlite3_progress_handler`, cached per `(table, column)`
-- [ ] candidates carry a description (type, or `table`/`view`/`function`) and a
+- [x] candidates carry a description (type, or `table`/`view`/`function`) and a
       group label for the menu
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] per-context expectations against `tests/test.db`, including the fixture's
+- [x] `make gate` → PASS
+- [x] per-context expectations against `tests/test.db`, including the fixture's
       reserved-word column and the identifier needing quoting
-- [ ] negative: a column of a table *not* in the `FROM` set is absent
-- [ ] keyword/function/pragma counts match what the linked library reports, so
+- [x] negative: a column of a table *not* in the `FROM` set is absent
+- [x] keyword/function/pragma counts match what the linked library reports, so
       the lists cannot silently go stale
-- [ ] a value query against a synthetic table large enough to exceed the time
+- [x] a value query against a synthetic table large enough to exceed the time
       limit returns promptly with no candidates — asserted on elapsed time
-- [ ] the cache is invalidated by DDL (add a column, complete again, see it)
+- [x] the cache is invalidated by DDL (add a column, complete again, see it)
 
 **Dependencies** — Phase 2.
 
@@ -508,6 +510,16 @@ offer the columns of `companies`, not every column in the database.
 
 Value completion is the only context that reads user data. The caps, the time
 limit and the truncation notice are what make it safe to leave on by default.
+
+**Outcome.** `db.c` grew the introspection half — `DbList`, a ring-buffer cache
+per source keyed by name and invalidated by the `PRAGMA schema_version` cookie,
+and the four runtime-enumerated sources. `comp.c` turns a `SqlContext` into a
+sorted, deduplicated, prefix-filtered candidate list, quoting identifiers that
+need it (`"order"`, `"total amount"`) and single-quoting non-numeric values.
+Value completion is bounded twice: `LIMIT 201` and a `clock_gettime`-based
+deadline enforced from a `sqlite3_progress_handler`; a table of 400k rows
+returns in milliseconds with `truncated` set. 15 tests in `tests/test_comp.c`,
+54 in total, gate PASS.
 
 ---
 

@@ -18,6 +18,9 @@ static const char *all_tests(void)
         msg = sqlctx_suite();
     }
     if (msg == NULL) {
+        msg = comp_suite();
+    }
+    if (msg == NULL) {
         msg = line_suite();
     }
     return msg;

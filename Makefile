@@ -170,7 +170,9 @@ $(BUILD_DIR)/vendor/sqlite3.o: $(SQLITE_AMALGAMATION)/sqlite3.c | $(BUILD_DIR)/v
 test:
 	@$(MAKE) --no-print-directory MODE=asan run-tests
 
-run-tests: $(BUILD_DIR)/tests/test_runner
+# The completion tests read tests/test.db, so it is a prerequisite rather than
+# something the developer has to remember to build.
+run-tests: $(BUILD_DIR)/tests/test_runner $(TEST_DIR)/test.db
 	@echo "Running test suite ($(MODE))..."
 	@ASAN_OPTIONS="detect_leaks=1:abort_on_error=1" ./$(BUILD_DIR)/tests/test_runner
 
@@ -252,7 +254,7 @@ tidy: compile_commands.json
 # analysing every branch; affordable on a codebase this size.
 cppcheck:
 	cppcheck --enable=all --check-level=exhaustive --inconclusive \
-	         --error-exitcode=1 --std=c99 \
+	         --error-exitcode=1 --std=c99 --inline-suppr \
 	         --suppress=missingIncludeSystem --suppress=unusedFunction \
 	         --suppress=checkersReport --suppress=toomanyconfigs \
 	         $(INCLUDES) $(SRC_DIR) $(INC_DIR) $(TEST_DIR)

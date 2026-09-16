@@ -1,0 +1,9 @@
+# Inherits the project configuration; relaxes one check for test code only.
+#
+# readability-function-cognitive-complexity counts the `if (msg) return msg;`
+# that minunit's mu_run_test expands to, so a suite's score is just its number
+# of tests, and a table-driven test's score is its number of cases. Splitting
+# either to satisfy the check would make the tests harder to read, which is the
+# opposite of what the check is for.
+InheritParentConfig: true
+Checks: '-readability-function-cognitive-complexity'

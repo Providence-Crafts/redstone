@@ -144,7 +144,17 @@ static bool pty_open(Pty *pty)
         return false;
     }
     pty->in = fdopen(slave, "r");
-    pty->out = pty->in != NULL ? fdopen(dup(slave), "w") : NULL;
+    pty->out = NULL;
+    if (pty->in != NULL) {
+        int copy = dup(slave);
+
+        if (copy >= 0) {
+            pty->out = fdopen(copy, "w");
+            if (pty->out == NULL) {
+                (void)close(copy);
+            }
+        }
+    }
     if (pty->out == NULL) {
         if (pty->in == NULL) {
             (void)close(slave);
