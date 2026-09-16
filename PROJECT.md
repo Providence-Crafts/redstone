@@ -16,7 +16,7 @@ references:
   - "docs/development-workflow.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phases 0-1 complete and gate-green. Phase 2 (sqlctx.c) next."
+notes: "Phases 0-2 complete and gate-green. Phase 3 (comp.c) next."
 ---
 
 # sqlsh
@@ -204,7 +204,7 @@ nothing more.
 | `src/main.c` | implemented | Argument parsing, REPL loop, prompts. The dot stub moves to `dot.c` in Phase 6. |
 | `src/edit.c` · `include/edit.h` | implemented | The editing core: buffer, cursor, emacs and vi keymaps, history ring. Performs no I/O, so every keybinding is unit-testable. |
 | `src/line.c` · `include/line.h` | implemented | Terminal layer: termios raw mode, signal-safe restoration, redraw, escape timeout, history file. |
-| `src/sqlctx.c` | Phase 2 | Tokenizer and cursor-context machine. Pure. |
+| `src/sqlctx.c` · `include/sqlctx.h` | implemented | Tokenizer and cursor-context machine. Pure: no allocation, no I/O, no recursion. Phase 7's highlighter reuses the lexer. |
 | `src/comp.c` | Phase 3 | Context → candidate list. Pure given a `Db`. |
 | `src/menu.c` | Phase 4 | The navigable menu. |
 | `src/out.c` | Phase 5 | 13 output modes, box drawing, type-aware colour. |
@@ -428,7 +428,7 @@ termios.
 
 ---
 
-### Phase 2: SQL context analysis `[ ]`
+### Phase 2: SQL context analysis `[x]`
 
 **Description**
 
@@ -439,27 +439,27 @@ query means. Phase 7's highlighter reuses this tokenizer unchanged.
 
 **Tasks**
 
-- [ ] tokenizer: identifiers, quoted identifiers (`"x"`, `` `x` ``, `[x]`),
+- [x] tokenizer: identifiers, quoted identifiers (`"x"`, `` `x` ``, `[x]`),
       string literals, blobs, numbers, `--` and `/* */` comments, operators,
       punctuation, parameters (`?`, `:name`, `@name`, `$name`)
-- [ ] `SqlContext` derivation: kind, the partial word under the cursor, the
+- [x] `SqlContext` derivation: kind, the partial word under the cursor, the
       `FROM`/`JOIN` table set with aliases, and the column under comparison
-- [ ] contexts: `CTX_DOT_COMMAND`, `CTX_DOT_ARG`, `CTX_STATEMENT_START`,
+- [x] contexts: `CTX_DOT_COMMAND`, `CTX_DOT_ARG`, `CTX_STATEMENT_START`,
       `CTX_SELECT_LIST`, `CTX_TABLE`, `CTX_COLUMN`, `CTX_VALUE`, `CTX_FUNCTION`,
       `CTX_PRAGMA`, `CTX_KEYWORD`, `CTX_UNKNOWN`
-- [ ] token kinds exposed in the header for the highlighter's later use
-- [ ] table-driven tests over (input, cursor) → expected context
+- [x] token kinds exposed in the header for the highlighter's later use
+- [x] table-driven tests over (input, cursor) → expected context
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] the context table passes, including aliases, `JOIN`, and a subquery in
+- [x] `make gate` → PASS
+- [x] the context table passes, including aliases, `JOIN`, and a subquery in
       `FROM`
-- [ ] negative: cursor inside a string literal, a comment, or a quoted
+- [x] negative: cursor inside a string literal, a comment, or a quoted
       identifier yields `CTX_UNKNOWN`, not a plausible-looking wrong context
-- [ ] fuzz: random byte strings at every cursor offset over a fixed corpus
+- [x] fuzz: random byte strings at every cursor offset over a fixed corpus
       terminate with no crash and no ASan finding
 
 **Dependencies** — Phase 0. Independent of Phase 1.

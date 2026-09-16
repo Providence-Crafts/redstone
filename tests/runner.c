@@ -15,6 +15,9 @@ static const char *all_tests(void)
         msg = edit_suite();
     }
     if (msg == NULL) {
+        msg = sqlctx_suite();
+    }
+    if (msg == NULL) {
         msg = line_suite();
     }
     return msg;
