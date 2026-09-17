@@ -84,9 +84,17 @@ Each module is a `.c` in `src/` with a header in `include/`, owns one concern,
 and depends only on those below it. No module reaches into another's internals.
 
 ```
-main.c      argument parsing (upstream flag set), REPL driver, signals
+main.c      argument parsing (upstream flag set) and nothing else
   |
-  +-- dot.c     dot-command table and dispatch: 44 implemented, 21 refused
+  +-- shell.c   the session: the current connection and the auxiliary ones,
+  |     |       the .output/.once redirect, the switches, statement
+  |     |       execution, the REPL, the init files
+  |     |
+  |     +-- dot.c     the command table and dispatch: 75 rows,
+  |     |             63 implemented and 12 refused
+  |     +-- schema.c  .schema .fullschema .dump .databases .indexes .tables
+  |     |             .dbinfo .dbtotxt .clone .lint -- byte-exact ports
+  |     +-- import.c  .import (RFC 4180 CSV and ASCII-delimited), .excel/.www
   |     |
   |     +-- out.c    the 22 output-mode presets, box drawing, type-aware colour
   |           |
@@ -111,6 +119,21 @@ typed values and column names and decides nothing about appearance, and nothing
 above `db.c` includes `<sqlite3.h>`. That split is what lets the formatter be
 tested on synthetic rows, and what lets the differential parity suite treat the
 whole pipeline as one function from query to bytes.
+
+`db.c` applies upstream's connection settings itself, on the first open and on
+every `.open`: double-quoted string literals off (DDL and DML), defensive on,
+trusted-schema off, statement scan-status off, extension loading enabled. They
+are behaviour, not decoration — with DQS off, `SELECT "typo"` is an error
+rather than a string. DQS in particular has to be set explicitly because
+upstream compiles its own SQLite with `-DSQLITE_DQS=0`, while sqlsh links a
+shared `libsqlite3` that may have been built either way; setting it here makes
+the two behave identically whichever library is underneath.
+
+A dot command is handed a `Shell` and reaches everything through it, so the
+program has no globals below `main.c`: the redirect a command writes to is
+`shell_out(sh)`, which is the `.output` file while one is active and the base
+stream otherwise. That is also why `.once` works without the REPL knowing about
+it — the shell ends the redirect after the next statement.
 
 `sqlctx.c` and `comp.c` are pure with respect to the terminal: they take a
 buffer and a cursor offset and return data. That is what makes the completion

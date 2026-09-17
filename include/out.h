@@ -75,6 +75,10 @@ void out_set_table_name(Out *out, const char *name);
  * on from theme_colour(). */
 void out_set_colour(Out *out, bool on);
 
+/* The per-column widths set by .width, for .show to print back. Returns the
+ * count and writes the array pointer to *WIDTHS. */
+size_t out_widths(const Out *out, const short **widths);
+
 /* The width of the terminal, for wrapping. Zero means unlimited. */
 void out_set_screen_width(Out *out, unsigned cols);
 

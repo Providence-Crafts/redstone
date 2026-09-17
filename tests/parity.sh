@@ -60,10 +60,87 @@ for mode in $MODES; do
     done < "$tmp/queries"
 done
 
-# The same, with the options that compose with every mode.
-for opt in "--headers" "--noheader"; do
-    :
+# The dot commands whose output is either fed back into SQLite (.dump,
+# .fullschema, .clone) or diffed by hand (.schema, .dbinfo, .lint). Each is
+# compared byte for byte: these have no "pretty" variant to fall back on, so a
+# difference here is a bug rather than a design choice.
+cat > "$tmp/dots" <<'DOT'
+.tables
+.tables t%
+.indexes
+.indexes t
+.databases
+.schema
+.schema --indent
+.schema --nosys
+.schema t
+.schema v
+.schema sqlite_schema
+.fullschema
+.dump
+.dump --data-only
+.dump --nosys
+.dump t
+.show
+.dbinfo
+.limit
+.limit attached
+.dbconfig
+.dbconfig defensive
+.lint fkey-indexes
+.lint fkey-indexes -verbose
+DOT
+
+while IFS= read -r dot; do
+    [ -n "$dot" ] || continue
+    checks=$((checks + 1))
+    "$SQLITE" "$db" "$dot" > "$tmp/want" 2>&1 || true
+    "$SQLSH" --compat "$db" "$dot" > "$tmp/got" 2>&1 || true
+    if ! cmp -s "$tmp/want" "$tmp/got"; then
+        fail=$((fail + 1))
+        echo "parity: MISMATCH $dot"
+        diff -u "$tmp/want" "$tmp/got" | sed -n '1,24p' | sed 's/^/    /'
+    fi
+done < "$tmp/dots"
+
+# A .dump has to restore, and restore to the same thing sqlite3(1)'s own dump
+# does. Both are replayed into a fresh database and the results compared, so
+# the check covers quoting and statement order without asserting that a
+# restored schema lists its objects in the original order -- it does not, for
+# either shell, because .dump emits tables before indexes.
+checks=$((checks + 1))
+"$SQLSH" --compat "$db" ".dump" > "$tmp/got.sql" 2>/dev/null || true
+"$SQLITE" "$db" ".dump" > "$tmp/want.sql" 2>/dev/null || true
+rm -f "$tmp/got.db" "$tmp/want.db"
+"$SQLITE" "$tmp/got.db" < "$tmp/got.sql" > /dev/null 2>&1 || true
+"$SQLITE" "$tmp/want.db" < "$tmp/want.sql" > /dev/null 2>&1 || true
+"$SQLITE" "$tmp/want.db" ".dump" > "$tmp/want" 2>/dev/null || true
+"$SQLITE" "$tmp/got.db" ".dump" > "$tmp/got" 2>/dev/null || true
+if ! cmp -s "$tmp/want" "$tmp/got"; then
+    fail=$((fail + 1))
+    echo "parity: MISMATCH .dump does not round-trip"
+    diff -u "$tmp/want" "$tmp/got" | sed -n '1,24p' | sed 's/^/    /'
+fi
+
+# .import has to read back what .mode csv wrote, including the rows with a
+# comma, a doubled quote and an embedded newline in them -- so the CSV is
+# produced by sqlite3(1) and both shells import it into a fresh table, whose
+# contents are then compared. An importer that mishandles RFC 4180 quoting
+# passes every formatting check above and still loses data here.
+checks=$((checks + 1))
+"$SQLITE" -csv -header "$db" "SELECT * FROM t;" > "$tmp/round.csv" 2>/dev/null || true
+for shell in want got; do
+    rm -f "$tmp/imp.$shell.db"
 done
+"$SQLITE" "$tmp/imp.want.db" ".import --csv $tmp/round.csv t" ".dump" > "$tmp/want" 2>&1 || true
+"$SQLSH" --compat "$tmp/imp.got.db" ".import --csv $tmp/round.csv t" ".dump" > "$tmp/got" 2>&1 || true
+if ! cmp -s "$tmp/want" "$tmp/got"; then
+    fail=$((fail + 1))
+    echo "parity: MISMATCH .import csv round-trip"
+    diff -u "$tmp/want" "$tmp/got" | sed -n '1,24p' | sed 's/^/    /'
+fi
+
+# The same, with the options that compose with every mode.
 for extra in "-header" "-noheader"; do
     for mode in box column list csv; do
         checks=$((checks + 1))

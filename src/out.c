@@ -12,7 +12,11 @@
 #define OUT_DFLT_CHAR_LIMIT 300
 #define OUT_DFLT_LINE_LIMIT 5
 #define OUT_DFLT_TITLE_LIMIT 20
-#define OUT_DFLT_MULTI_INSERT 3000u
+/* One INSERT per row. Trunk batches rows up to 3000 characters, but the
+ * 3.53.3 binary sqlsh is measured against does not, and .dump output is
+ * compared byte for byte often enough that the difference matters.
+ * "--multiinsert N" still asks for batching explicitly. */
+#define OUT_DFLT_MULTI_INSERT 0u
 
 #define OUT_MAX_COLUMNS 256
 
@@ -189,7 +193,10 @@ static bool str_grow(Str *s, size_t add)
     size_t need = s->n + add + 1u;
     char *grown;
 
-    if (need <= s->cap) {
+    /* p is tested as well as cap so that the "allocated" state is one the
+     * reader -- and the static analyser -- can see, rather than an invariant
+     * held only by the arithmetic above. */
+    if (s->p != NULL && need <= s->cap) {
         return true;
     }
     while (s->cap < need) {
@@ -1090,7 +1097,7 @@ static bool line_rule(const Out *o, Str *line, const char *const parts[4], const
         if (i > 0 && !str_puts(line, parts[2])) {
             return false;
         }
-        if (!str_rep(line, parts[1], widths[(size_t)i] + 2u * margin)) {
+        if (!str_rep(line, parts[1], widths[(size_t)i] + (2u * margin))) {
             return false;
         }
     }
@@ -1120,7 +1127,9 @@ static char **split_cell(const char *cell, size_t w, bool wordwrap, size_t *n)
     size_t cap = 0u;
     size_t count = 0u;
     Str buf = {NULL, 0u, 0u};
-    const char *rest = cell;
+    /* A NULL cell is an empty one: every mode renders its own null text
+     * before reaching here, so there is nothing to split. */
+    const char *rest = cell != NULL ? cell : "";
     bool first = true;
 
     while (first || rest != NULL) {
@@ -1130,7 +1139,12 @@ static char **split_cell(const char *cell, size_t w, bool wordwrap, size_t *n)
 
         first = false;
         rest = next_line(rest != NULL ? rest : "", &buf, &cells);
-        from = buf.p != NULL ? buf.p : "";
+        from = buf.p;
+        if (from == NULL) {
+            /* Nothing was buffered, so there is nothing to measure either. */
+            from = "";
+            cells = 0u;
+        }
         do {
             size_t take = strlen(from + offset);
             char *copy;
@@ -1239,7 +1253,7 @@ static Align align_of(const Out *o, size_t col)
         return o->align[col];
     }
     for (r = 0u; r < o->nrow; r++) {
-        OutType t = o->cell[r * (size_t)o->ncol + col].type;
+        OutType t = o->cell[(r * (size_t)o->ncol) + col].type;
 
         if (t == OUT_INT || t == OUT_REAL) {
             numeric = true;
@@ -1262,7 +1276,7 @@ static void layout(const Out *o, char *const *titles, size_t *widths, bool *mult
 
         widths[i] = o->headers ? width_of(titles[i]) : 0u;
         for (r = 0u; r < o->nrow; r++) {
-            const char *text = o->cell[r * (size_t)o->ncol + i].text;
+            const char *text = o->cell[(r * (size_t)o->ncol) + i].text;
             size_t lines = 1u;
             size_t n = width_longest_line(text, &lines);
 
@@ -1298,7 +1312,9 @@ static bool columnar_header(Out *o, Str *line, const Border *b, char *const *tit
         return false;
     }
     for (i = 0u; i < (size_t)o->ncol; i++) {
-        const char *title = titles[i];
+        /* An empty title rather than a missing one: the header row has to
+         * have the same number of cells as the rule above and below it. */
+        const char *title = titles[i] != NULL ? titles[i] : "";
 
         if (i > 0u && !str_puts(line, b->v)) {
             return false;
@@ -1315,15 +1331,16 @@ static bool columnar_header(Out *o, Str *line, const Border *b, char *const *tit
 static bool columnar_row(Out *o, Str *line, const Border *b, const size_t *widths, size_t margin,
                          size_t row)
 {
-    char **lines[OUT_MAX_COLUMNS];
-    size_t nlines[OUT_MAX_COLUMNS];
+    /* Zeroed so that the cleanup loop is safe whatever path reaches it. */
+    char **lines[OUT_MAX_COLUMNS] = {NULL};
+    size_t nlines[OUT_MAX_COLUMNS] = {0u};
     size_t tallest = 1u;
     size_t i;
     size_t l;
     bool ok = true;
 
     for (i = 0u; i < (size_t)o->ncol; i++) {
-        const Cell *c = &o->cell[row * (size_t)o->ncol + i];
+        const Cell *c = &o->cell[(row * (size_t)o->ncol) + i];
 
         lines[i] = split_cell(c->text, widths[i], o->wordwrap, &nlines[i]);
         if (lines[i] == NULL) {
@@ -1345,7 +1362,7 @@ static bool columnar_row(Out *o, Str *line, const Border *b, const size_t *width
         str_clear(line);
         ok = str_puts(line, b->left);
         for (i = 0u; ok && i < (size_t)o->ncol; i++) {
-            const Cell *c = &o->cell[row * (size_t)o->ncol + i];
+            const Cell *c = &o->cell[(row * (size_t)o->ncol) + i];
             const char *text = l < nlines[i] ? lines[i][l] : "";
 
             ok = (i == 0u || str_puts(line, b->v)) && str_rep(line, " ", margin) &&
@@ -1366,7 +1383,7 @@ static bool columnar_end(Out *o)
     /* Zeroed because an empty result reaches the border code without layout()
      * having run, and a border of no columns still reads the array. */
     size_t widths[OUT_MAX_COLUMNS] = {0u};
-    char *titles[OUT_MAX_COLUMNS];
+    char *titles[OUT_MAX_COLUMNS] = {NULL};
     const Border *b = border_for(o);
     size_t margin = cell_margin(o);
     Str line = {NULL, 0u, 0u};
@@ -1638,8 +1655,6 @@ const char *out_null_text(const Out *out)
     return out->null_text != NULL ? out->null_text : "";
 }
 
-/* cppcheck-suppress staticFunction ; one of out.h's uniform setter family.
- * Only out_command calls it today; dot.c's .import will in phase 6. */
 void out_set_table_name(Out *out, const char *name)
 {
     replace_str(&out->table_name, name);
@@ -1648,6 +1663,12 @@ void out_set_table_name(Out *out, const char *name)
 void out_set_colour(Out *out, bool on)
 {
     out->colour = on && !out->compat;
+}
+
+size_t out_widths(const Out *out, const short **widths)
+{
+    *widths = out->widths;
+    return out->nwidths;
 }
 
 void out_set_screen_width(Out *out, unsigned cols)
@@ -1992,6 +2013,13 @@ bool out_command(Out *out, int argc, const char *const *argv, FILE *err)
         bool flag = false;
 
         if (a[0] != '-') {
+            if (i > 0 && argv[i - 1][0] != '-') {
+                /* ".mode insert TABLE": a second bare word names the table
+                 * the INSERT statements are for. Other modes accept and
+                 * ignore it, as sqlite3(1) does. */
+                out_set_table_name(out, a);
+                continue;
+            }
             if (!out_set_mode(out, a)) {
                 if (err != NULL) {
                     (void)fprintf(err, "Error: mode should be one of:");

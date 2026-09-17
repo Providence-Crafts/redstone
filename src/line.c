@@ -183,6 +183,13 @@ bool line_interactive(const Line *ln)
     return ln != NULL && ln->tty;
 }
 
+void line_set_interactive(Line *ln, bool on)
+{
+    /* -batch and -interactive override what isatty(3) found: a script may
+     * want the prompts suppressed on a terminal, or kept off a pipe. */
+    ln->tty = on;
+}
+
 void line_set_keymap(Line *ln, EditKeymap keymap)
 {
     if (ln != NULL) {

@@ -37,6 +37,9 @@ const char *line_text(const Line *ln);
  * decoration and no history. */
 bool line_interactive(const Line *ln);
 
+/* Force interactive on or off, for -interactive and -batch. */
+void line_set_interactive(Line *ln, bool on);
+
 void line_set_keymap(Line *ln, EditKeymap keymap);
 EditKeymap line_keymap(const Line *ln);
 

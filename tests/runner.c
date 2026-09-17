@@ -32,6 +32,9 @@ static const char *all_tests(void)
     if (msg == NULL) {
         msg = width_suite();
     }
+    if (msg == NULL) {
+        msg = dot_suite();
+    }
     return msg;
 }
 

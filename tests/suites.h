@@ -13,5 +13,6 @@ const char *comp_suite(void);
 const char *menu_suite(void);
 const char *out_suite(void);
 const char *width_suite(void);
+const char *dot_suite(void);
 
 #endif /* SQLSH_TEST_SUITES_H */

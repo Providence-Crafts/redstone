@@ -29,3 +29,20 @@ CREATE TABLE empty (a, b);
 
 CREATE TABLE nums (x INTEGER, y REAL);
 INSERT INTO nums VALUES (1, 1.0), (22, 2.25), (333, -3.5), (NULL, NULL);
+
+-- Objects the schema and lint commands need: an index with a collation, a
+-- view, a trigger, and a foreign key with no index on the child side (which
+-- is exactly what ".lint fkey-indexes" is meant to report).
+CREATE INDEX t_label ON t(label COLLATE NOCASE);
+CREATE VIEW v AS SELECT id, label FROM t WHERE num > 0;
+CREATE TABLE parent (pid INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE child (
+  cid INTEGER PRIMARY KEY,
+  pid INTEGER REFERENCES parent(pid),
+  tag TEXT COLLATE NOCASE REFERENCES parent(name)
+);
+INSERT INTO parent VALUES (1, 'a'), (2, 'b');
+INSERT INTO child VALUES (1, 1, 'a'), (2, 2, 'b');
+CREATE TRIGGER t_ins AFTER INSERT ON nums BEGIN
+  UPDATE nums SET y = y + 1 WHERE x = new.x;
+END;

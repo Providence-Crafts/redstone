@@ -22,13 +22,15 @@ static char *save_env(const char *name)
 {
     const char *v = getenv(name);
     char *copy;
+    size_t n;
 
     if (v == NULL) {
         return NULL;
     }
-    copy = malloc(strlen(v) + 1u);
+    n = strlen(v) + 1u;
+    copy = malloc(n);
     if (copy != NULL) {
-        strcpy(copy, v);
+        memcpy(copy, v, n);
     }
     return copy;
 }
@@ -193,9 +195,28 @@ static const char *test_mode_insert(void)
     mu_assert("out_new failed", out != NULL);
     mu_assert("bad mode name", out_set_mode(out, "insert"));
     got = capture(out, 2, g_names, g_rows, 2u);
-    /* No --tablename set: falls back to "tab", the same as upstream. */
+    /* No --tablename set: falls back to "tab", the same as upstream. One
+     * statement per row, which is what sqlite3(1) 3.53.3 emits. */
     mu_assert("insert output wrong",
-              got != NULL && strcmp(got, "INSERT INTO tab VALUES(1,'x'),(2,'y');\n") == 0);
+              got != NULL &&
+                  strcmp(got, "INSERT INTO tab VALUES(1,'x');\nINSERT INTO tab VALUES(2,'y');\n") ==
+                      0);
+    free(got);
+    out_free(out);
+    return NULL;
+}
+
+static const char *test_mode_multiinsert(void)
+{
+    static const char *const argv[] = {"insert", "--tablename", "t", "--multiinsert", "3000"};
+    Out *out = out_new(NULL);
+    char *got;
+
+    mu_assert("out_new failed", out != NULL);
+    mu_assert("mode command failed", out_command(out, 5, argv, NULL));
+    got = capture(out, 2, g_names, g_rows, 2u);
+    mu_assert("multiinsert output wrong",
+              got != NULL && strcmp(got, "INSERT INTO t VALUES(1,'x'),(2,'y');\n") == 0);
     free(got);
     out_free(out);
     return NULL;
@@ -577,13 +598,12 @@ static const char *test_command_rejects_bad_value(void)
  * of g_table, a UTF-8 one draws the Unicode box-drawing border of g_box. All
  * three variables are neutralised for each case since utf8_locale() checks
  * them in that order and stops at the first one that is set. */
-static const char *test_box_border_locale_fallback(void)
+/* The body is separate so that the caller can restore the environment on
+ * every exit, including the one an assertion takes. */
+static const char *box_border_locale_body(void)
 {
     Out *out;
     char *got;
-    char *old_all = save_env("LC_ALL");
-    char *old_ctype = save_env("LC_CTYPE");
-    char *old_lang = save_env("LANG");
 
     mu_assert("setenv LC_ALL failed", setenv("LC_ALL", "C", 1) == 0);
     mu_assert("setenv LC_CTYPE failed", setenv("LC_CTYPE", "C", 1) == 0);
@@ -619,11 +639,20 @@ static const char *test_box_border_locale_fallback(void)
                               "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xaf\n") == 0);
     free(got);
     out_free(out);
+    return NULL;
+}
+
+static const char *test_box_border_locale_fallback(void)
+{
+    char *old_all = save_env("LC_ALL");
+    char *old_ctype = save_env("LC_CTYPE");
+    char *old_lang = save_env("LANG");
+    const char *msg = box_border_locale_body();
 
     restore_env("LC_ALL", old_all);
     restore_env("LC_CTYPE", old_ctype);
     restore_env("LANG", old_lang);
-    return NULL;
+    return msg;
 }
 
 /* Colour is opt-in (out_set_colour) and only ever touches cells, via sgr() in
@@ -680,6 +709,7 @@ const char *out_suite(void)
     mu_run_test(test_mode_line);
     mu_run_test(test_mode_json);
     mu_run_test(test_mode_insert);
+    mu_run_test(test_mode_multiinsert);
     mu_run_test(test_mode_markdown);
     mu_run_test(test_mode_box);
     mu_run_test(test_mode_column);

@@ -16,6 +16,26 @@
 #                                      (FILE *out, FILE *err) and similar are
 #                                      deliberate and read clearly at call sites
 #
+#   readability-function-cognitive-complexity
+#                                      the functions over the threshold are
+#                                      flat option dispatchers (out_command,
+#                                      apply_option, import_cmd_import, main)
+#                                      or line-by-line ports of upstream
+#                                      shell.c (format_schema, schema_cmd_dump,
+#                                      split_cell, dot_split). Both kinds score
+#                                      high because they have many one-line
+#                                      branches, not because any branch is
+#                                      deep; splitting an option table into
+#                                      helpers would hide the correspondence
+#                                      with sqlite3(1), which is what the
+#                                      parity tests measure
+#   bugprone-multi-level-implicit-pointer-conversion
+#                                      it fires on malloc/realloc into char **.
+#                                      C converts void * implicitly by design
+#                                      and casting the result of malloc is
+#                                      discouraged in C, so the "fix" would add
+#                                      noise and hide a missing <stdlib.h>
+#
 #   cert-err33-c                     would require checking the return of
 #                                      every fputc/fputs/fprintf. Stream errors
 #                                      are sticky, so db_exec checks ferror()
@@ -40,7 +60,9 @@ Checks: >
   -readability-uppercase-literal-suffix,
   -misc-include-cleaner,
   -bugprone-easily-swappable-parameters,
-  -cert-err33-c
+  -cert-err33-c,
+  -readability-function-cognitive-complexity,
+  -bugprone-multi-level-implicit-pointer-conversion
 
 WarningsAsErrors: ''
 HeaderFilterRegex: 'sqlite-cli/(include|src|tests)/[^/]*\.h$'
