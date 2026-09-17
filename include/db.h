@@ -138,6 +138,13 @@ bool db_stmt_is_null(DbStmt *stmt, int i);
 /* OUT_* from out.h, so a caller can quote a value the way its type needs. */
 OutType db_stmt_type(DbStmt *stmt, int i);
 
+/* Report the step just made, then put STMT back to its pre-bound state so the
+ * same statement can be bound and stepped again. Returns false, after writing
+ * the error to ERR (which may be NULL), when that step failed. Preparing once
+ * and resetting per row is what keeps a large .import from re-compiling its
+ * INSERT for every line of the file. Safe on NULL. */
+bool db_stmt_reset(DbStmt *stmt, FILE *err);
+
 /* Finalize and free. Returns false if the statement ended in an error, after
  * writing it to ERR (which may be NULL). Safe on NULL. */
 bool db_finalize(DbStmt *stmt, FILE *err);
@@ -162,6 +169,11 @@ char *db_scalar(Db *db, const char *sql);
 const char *db_errmsg(Db *db);
 
 int db_changes(Db *db);
+
+/* False while a transaction is open on this connection. `.import` asks before
+ * wrapping its load in one, so that it neither nests a transaction nor commits
+ * one the user began. */
+bool db_autocommit(Db *db);
 
 /* `.stats`: the memory and lookaside counters, in sqlite3(1)'s layout. Here
  * because every one of them comes from sqlite3_status64 and

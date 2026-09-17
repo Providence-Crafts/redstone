@@ -905,6 +905,28 @@ OutType db_stmt_type(DbStmt *stmt, int i)
     return type_of(sqlite3_column_type(stmt->handle, i));
 }
 
+bool db_stmt_reset(DbStmt *stmt, FILE *err)
+{
+    bool ok;
+
+    if (stmt == NULL) {
+        return true;
+    }
+    /* sqlite3_reset returns the error code of the step that just ran. On a
+     * reused statement that is the only place a failed INSERT is reported:
+     * unlike db_finalize below, nothing else looks at it afterwards. */
+    ok = sqlite3_reset(stmt->handle) == SQLITE_OK &&
+         (stmt->rc == SQLITE_DONE || stmt->rc == SQLITE_OK);
+    if (!ok && err != NULL) {
+        fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(stmt->db->handle));
+    }
+    /* Bindings survive a reset, so clear them: a row with fewer fields than
+     * the last one would otherwise inherit the missing values. */
+    (void)sqlite3_clear_bindings(stmt->handle);
+    stmt->rc = SQLITE_OK;
+    return ok;
+}
+
 bool db_finalize(DbStmt *stmt, FILE *err)
 {
     bool ok;
@@ -966,6 +988,11 @@ const char *db_errmsg(Db *db)
 int db_changes(Db *db)
 {
     return sqlite3_changes(db->handle);
+}
+
+bool db_autocommit(Db *db)
+{
+    return sqlite3_get_autocommit(db->handle) != 0;
 }
 
 /* One counter, in the two-column layout sqlite3(1) uses for .stats. */

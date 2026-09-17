@@ -625,23 +625,21 @@ bool import_cmd_import(Shell *sh, int argc, char **argv)
         fprintf(shell_out(sh), "Insert using: %s\n", insert_sql.p);
     }
 
-    /* One transaction for the whole load, for speed. If the caller already
-     * has one open, BEGIN fails and needs_commit stays false, so .import
-     * neither nests a transaction nor commits one it did not start; db.h has
-     * no sqlite3_get_autocommit accessor to check this ahead of time, so
-     * this is inferred from BEGIN's own success. */
+    /* One transaction for the whole load, for speed -- but only when the
+     * caller has none open, so .import neither nests a transaction nor commits
+     * one it did not start. The INSERT is prepared once and reset per row:
+     * re-compiling it for every line dominates the cost of a large file. */
     {
-        bool needs_commit = db_run(shell_db(sh), "BEGIN", NULL);
+        bool needs_commit = db_autocommit(shell_db(sh)) && db_run(shell_db(sh), "BEGIN", NULL);
+        DbStmt *ins = db_prepare(shell_db(sh), insert_sql.p, shell_err(sh));
 
-        do {
+        if (ins == NULL) {
+            ok = false;
+        }
+        while (ok) {
             int start_line = rd.line;
-            DbStmt *ins = db_prepare(shell_db(sh), insert_sql.p, shell_err(sh));
             int i;
 
-            if (ins == NULL) {
-                ok = false;
-                break;
-            }
             for (i = 0; i < ncol; i++) {
                 const char *z = read_field(&rd, a.colsep, a.rowsep);
 
@@ -686,7 +684,7 @@ bool import_cmd_import(Shell *sh, int argc, char **argv)
             }
             if (i >= ncol) {
                 (void)db_step(ins);
-                if (!db_finalize(ins, shell_err(sh))) {
+                if (!db_stmt_reset(ins, shell_err(sh))) {
                     err_count++;
                     if (shell_flag(sh, SHELL_BAIL)) {
                         break;
@@ -695,9 +693,13 @@ bool import_cmd_import(Shell *sh, int argc, char **argv)
                     row_count++;
                 }
             } else {
-                (void)db_finalize(ins, NULL);
+                (void)db_stmt_reset(ins, NULL);
             }
-        } while (rd.term != EOF);
+            if (rd.term == EOF) {
+                break;
+            }
+        }
+        (void)db_finalize(ins, NULL);
 
         if (needs_commit) {
             (void)db_run(shell_db(sh), "COMMIT", shell_err(sh));
