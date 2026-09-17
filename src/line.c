@@ -1,5 +1,6 @@
 #include "line.h"
 
+#include "hl.h"
 #include "menu.h"
 
 #include <errno.h>
@@ -36,6 +37,8 @@ struct Line {
     Menu *menu;
     unsigned menu_rows; /* lines the menu occupied at the last redraw */
     LineCompleter completer;
+    HlSchema schema;
+    bool highlight;
 };
 
 /* The one live instance, so the atexit hook and the signal handlers can restore
@@ -207,6 +210,17 @@ EditViState line_vi_state(const Line *ln)
     return ln != NULL ? edit_vi_state(ln->edit) : EDIT_VI_INSERT;
 }
 
+void line_set_highlighter(Line *ln, const HlSchema *schema)
+{
+    static const HlSchema none = {NULL, NULL, NULL, NULL, NULL};
+
+    if (ln == NULL) {
+        return;
+    }
+    ln->schema = schema != NULL ? *schema : none;
+    ln->highlight = schema != NULL;
+}
+
 void line_set_completer(Line *ln, const LineCompleter *completer)
 {
     static const LineCompleter none = {NULL, NULL};
@@ -304,7 +318,7 @@ static void refresh(Line *ln, const char *prompt)
 
     fputc('\r', ln->out);
     fputs(prompt, ln->out);
-    fwrite(buf + start, 1u, len - start, ln->out);
+    hl_write(ln->out, buf, start, len, ln->highlight ? &ln->schema : NULL);
     if (ln->menu_rows > 0u || menu_active(ln->menu)) {
         /* Erase to the end of the display, not just the line: the menu owns
          * everything below the prompt, and 0J is what removes the rows a

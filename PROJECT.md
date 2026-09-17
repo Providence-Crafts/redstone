@@ -16,7 +16,7 @@ references:
   - "docs/development-workflow.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phases 0-6 complete and gate-green. Phase 7 (syntax highlighting) next."
+notes: "Phases 0-7 complete and gate-green. Phase 8 (hardening and release) next."
 ---
 
 # sqlsh
@@ -75,10 +75,12 @@ to `sqlite3(1)`, never silently missing.
   mode matrix, verified by differential test in the gate.
 - `make gate` prints PASS: formatter, both builds, sanitized tests, cppcheck
   and clang-tidy clean, zero warnings.
-- Total `src/` stays under roughly 10,000 lines (owner's revision at Phase 6
-  planning, from the original 6,000). Upstream `shell.c` is 37,373. **Currently
-  12,877** — Phase 6's three modules cost 3,700 lines of dot-command surface,
-  and the criterion is over budget rather than met; see the Phase 6 notes.
+- Total `src/` stays in the region of 13,500 lines (owner's revision at Phase 7
+  planning, from 10,000 at Phase 6 and 6,000 originally: the dot-command surface
+  turned out to cost what it costs, and the budget was moved to reality rather
+  than reality trimmed to the budget). Upstream `shell.c` is 37,373. **Currently
+  14,008** — Phase 7 added `hl.c` (232) and roughly 400 lines of theme-file
+  parser, leaving the total about 4% over the accepted budget.
 
 **Constraints**
 
@@ -226,11 +228,11 @@ nothing more.
 | `src/comp.c` · `include/comp.h` | implemented | Context → candidate list. Pure given a `Db`: no terminal, no globals. The dot-command table is injected as a `CompDotSource`, so Phase 6 owns it alone. |
 | `src/menu.c` · `include/menu.h` | implemented | The navigable menu: layout, selection, rendering. Told its size, returns bytes; `line.c` owns the terminal. |
 | `src/out.c` | Phase 5 | 13 output modes, box drawing, type-aware colour. |
-| `src/theme.c` · `include/theme.h` | partial | Colour capability detection and the style table, brought forward from Phase 5 because the menu needs styles. Phase 5 adds the output styles, Phase 7 the theme file. |
-| `src/dot.c` · `include/dot.h` | implemented | The command table (75 entries: 63 implemented, 12 refused), the splitter, dispatch, `.help`, and the small commands that are one setting each. |
+| `src/theme.c` · `include/theme.h` | implemented | Colour capability detection, the 25-style table, the INI theme-file parser and `theme_dump`. The four built-in palettes are theme-file *text* parsed by that same parser, so a shipped theme cannot accept anything a user's file may not. |
+| `src/dot.c` · `include/dot.h` | implemented | The command table (76 entries: 64 implemented, 12 refused — Phase 7 added `.theme`), the splitter, dispatch, `.help`, and the small commands that are one setting each. |
 | `src/schema.c` · `include/schema.h` | implemented | The introspection commands: `.schema`, `.fullschema`, `.dump`, `.databases`, `.indexes`, `.tables`, `.dbinfo`, `.dbtotxt`, `.clone`, `.lint`. Byte-for-byte ports, which is why they are their own module. |
 | `src/import.c` · `include/import.h` | implemented | `.import` (RFC 4180 CSV and ASCII-delimited), `.excel`/`.www`, and the temp-file handling they need. |
-| `src/hl.c` | Phase 7 | Syntax highlighting while typing. |
+| `src/hl.c` · `include/hl.h` | implemented | Syntax highlighting while typing. Pure and database-unaware: schema lookups arrive as four callbacks in an `HlSchema`, the same injection pattern as `LineCompleter`, so every colouring decision is testable without a connection. |
 
 **Runtime-enumerable candidate sources.** Nothing is hardcoded that the library
 can report: 147 keywords via `sqlite3_keyword_count`/`sqlite3_keyword_name`,
@@ -869,7 +871,7 @@ which is the owner's call, not the agent's.
 
 ---
 
-### Phase 7: Syntax highlighting and theming `[ ]`
+### Phase 7: Syntax highlighting and theming `[x]`
 
 **Description**
 
@@ -878,30 +880,37 @@ it is typed, and none of the colour in the program is hardcoded any more.
 
 **Tasks**
 
-- [ ] `hl.c`: map `sqlctx.c` token kinds to theme colours; re-render the buffer
+- [x] `hl.c`: map `sqlctx.c` token kinds to theme colours; re-render the buffer
       on every edit
-- [ ] highlight keywords, functions, strings, numbers, comments, parameters and
-      quoted identifiers distinctly
-- [ ] unbalanced quote or paren shown as an error colour, which is also the
+- [x] highlight keywords, functions, strings, numbers, comments, parameters and
+      quoted identifiers distinctly — plus, beyond the original plan, tables,
+      views and in-scope columns, coloured from the completion engine's caches
+- [x] unbalanced quote or paren shown as an error colour, which is also the
       cue for why the prompt is asking for a continuation line
-- [ ] theme file at `$XDG_CONFIG_HOME/sqlsh/theme` (default
-      `~/.config/sqlsh/theme`): `key = colour` lines, unknown keys
-      warned about and ignored, missing file means the built-in palette
-- [ ] `.theme` dot command to reload and to list the current palette
-- [ ] two built-in themes, one for dark and one for light terminals
+- [x] theme file at `$XDG_CONFIG_HOME/sqlsh/theme` (default
+      `~/.config/sqlsh/theme`): `[section]` headers over `key = value` lines,
+      unknown sections, keys and values warned about and ignored, missing file
+      means the built-in palette
+- [x] `.theme` dot command: dump, `list`, `reload`, `on`/`off`, or load a
+      built-in palette or a file by name
+- [x] four built-in themes — `default`, `dark`, `light` and the 16-colour-safe
+      `basic`
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] pty test: typing a statement produces the expected SGR sequence at each
-      token boundary
-- [ ] highlighting adds no visible latency — assert redraw stays under a fixed
-      budget on a long line
-- [ ] a malformed theme file is diagnosed and falls back to the built-in
-      palette rather than failing to start
-- [ ] `NO_COLOR` disables highlighting as well as output colour
+- [x] `make gate` → PASS (138 unit tests, 138 parity checks)
+- [x] pty test: typing a statement produces the expected SGR sequence at each
+      token boundary — `test_pty_highlight`, plus `test_token_kinds`, which
+      asserts one style per token kind without needing a terminal
+- [x] highlighting adds no visible latency — assert redraw stays under a fixed
+      budget on a long line (`test_long_line_is_fast`: 20 renders of a 4 KB
+      line, 20 ms each)
+- [x] a malformed theme file is diagnosed and falls back to the built-in
+      palette rather than failing to start (`test_bad_input_is_diagnosed`)
+- [x] `NO_COLOR` disables highlighting as well as output colour — the pty tests
+      now install a highlighter, so `test_pty_no_color` covers both
 
 *Manual*
 
@@ -917,6 +926,39 @@ it is typed, and none of the colour in the program is hardcoded any more.
 - Decision: **A theme file is now in scope**, promoted from the deferred log,
   because with colour in the output, the menu and the editor there is finally
   something worth configuring.
+
+- Decision (owner, Phase 7 planning): **INI with `[section]` headers** —
+  `[menu]`, `[syntax]`, `[output]` — rather than one flat namespace. The three
+  groups are what a user thinks in, and the section is what makes `menu.value`
+  and `output.string` readable as two different things.
+
+- Decision (owner, Phase 7 planning): **tokens plus schema awareness.** A name
+  the database knows is coloured as what it is — table, view, column — and a
+  name it does not know stays plain. This is the feature: an unknown name is
+  visible as a typo before the statement is ever run. The lookups run against
+  `db.c`'s existing caches only, never a query, because they are asked once per
+  identifier per keystroke.
+
+- Decision: **`hl.c` is database-unaware**, reached through an `HlSchema` of
+  four callbacks, exactly as `line.c` reaches the completer. The layering rule
+  holds — nothing above `db.c` includes `<sqlite3.h>` — and the highlighter is
+  testable against a stub schema.
+
+- Decision: **the built-in palettes are theme-file text inside the binary**,
+  not files installed into `themes/`. The roadmap said "two built-in themes";
+  what shipped is four, parsed by the same parser a user's file goes through.
+  There is nothing to install, nothing to lose, and `theme_dump` round-trips —
+  `.theme > ~/.config/sqlsh/theme` is a working way to start editing one, and a
+  test asserts the round trip for every shipped palette.
+
+- Decision: **`#` comments a whole line only; `--` comments to end of line.**
+  A value is the one place a user writes `#rrggbb`, so `#` cannot mean "comment
+  from here" without eating colours. `--` is what SQL uses, which is what the
+  audience already knows.
+
+- Decision: **`-noinit` suppresses the theme file too.** It already suppresses
+  `~/.sqliterc`; "no configuration" has to mean all of it, or the flag is a
+  half-truth when a session comes back coloured.
 
 **Dependencies** — Phases 1, 2, 5.
 
@@ -985,4 +1027,5 @@ as phases land.
 | 5 | The default output is genuinely nicer to read than `sqlite3(1)`'s | `make && ./bin/sqlsh tests/test.db`, then `SELECT * FROM employees LIMIT 20;`. Compare against `sqlite3 tests/test.db` running the same query, and against `./bin/sqlsh --compat`. Check a NULL-heavy and a blob-heavy table too. |
 | 4 | The menu feels like zsh's: no flicker, correct placement near the bottom of the screen, readable columns | `make && ./bin/sqlsh tests/test.db`, then type `SELECT * FROM ` and press Tab. Repeat with the window scrolled so the prompt is on the last row, and with a narrow window. |
 | 6 | `alias sqlite3=sqlsh` for a day's work surfaces nothing missing | `make && alias sqlite3=$PWD/bin/sqlsh`, then use it for whatever the day brings. Anything that behaves differently from the real `sqlite3(1)` is a parity bug worth a line in the next phase. |
+| 7 | Colours are legible on both the owner's dark and light terminal profiles | `make && ./bin/sqlsh tests/test.db`, then type a statement mixing known and unknown names, e.g. `SELECT id, nosuch FROM employees WHERE 'x'`. Try `.theme dark`, `.theme light` and `.theme basic` under each terminal profile, and `.theme` to see the palette as a file. |
 | 6 | `-noinit` suppresses a `~/.sqliterc` that would otherwise be visible | Put `.mode box` in `~/.sqliterc`, run `./bin/sqlsh tests/test.db "SELECT 1;"` (box) and `./bin/sqlsh -noinit tests/test.db "SELECT 1;"` (list). Not automated: the suite will not plant files in a real `$HOME`. |

@@ -11,6 +11,7 @@
 
 #include "comp.h"
 #include "edit.h"
+#include "hl.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -56,6 +57,11 @@ typedef struct {
 } LineCompleter;
 
 void line_set_completer(Line *ln, const LineCompleter *completer);
+
+/* The highlighting hook, injected for the same reason the completer is: this
+ * module must not know what a table is. SCHEMA is copied; NULL turns
+ * highlighting back to the purely lexical colouring. */
+void line_set_highlighter(Line *ln, const HlSchema *schema);
 
 /* Which vi state the last edited line ended in, so the caller can show it in
  * the prompt. Always EDIT_VI_INSERT under the emacs keymap. */

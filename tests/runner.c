@@ -35,6 +35,12 @@ static const char *all_tests(void)
     if (msg == NULL) {
         msg = dot_suite();
     }
+    if (msg == NULL) {
+        msg = theme_suite();
+    }
+    if (msg == NULL) {
+        msg = hl_suite();
+    }
     return msg;
 }
 

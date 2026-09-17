@@ -90,8 +90,8 @@ main.c      argument parsing (upstream flag set) and nothing else
   |     |       the .output/.once redirect, the switches, statement
   |     |       execution, the REPL, the init files
   |     |
-  |     +-- dot.c     the command table and dispatch: 75 rows,
-  |     |             63 implemented and 12 refused
+  |     +-- dot.c     the command table and dispatch: 76 rows,
+  |     |             64 implemented and 12 refused
   |     +-- schema.c  .schema .fullschema .dump .databases .indexes .tables
   |     |             .dbinfo .dbtotxt .clone .lint -- byte-exact ports
   |     +-- import.c  .import (RFC 4180 CSV and ASCII-delimited), .excel/.www
@@ -199,6 +199,60 @@ A `<Tab>` at cursor offset *n* in buffer *b* flows:
 This is on by default. `.complete values off` disables it for sessions against
 databases where even a capped scan is unwelcome.
 
+## Highlighting and theming
+
+`hl_write(out, text, from, to, schema)` writes a window of the line being typed,
+coloured. It reuses `sqlctx.c`'s lexer rather than carrying one of its own — two
+lexers would drift, and the colour would stop agreeing with the completion — and
+it analyses the whole line even when only part of it is drawn, because a string
+that opened before the window still colours what follows.
+
+`hl.c` knows nothing about a database. Schema lookups arrive as four callbacks:
+
+```c
+typedef struct {
+    bool (*is_keyword)(void *ctx, const char *name, size_t len);
+    bool (*is_function)(void *ctx, const char *name, size_t len);
+    bool (*is_table)(void *ctx, const char *name, size_t len, bool *is_view);
+    bool (*is_column)(void *ctx, const char *name, size_t len,
+                      const SqlCtxTable *tables, size_t ntables);
+    void *ctx;
+} HlSchema;
+```
+
+`main.c` supplies them, `line.c` merely carries them — the same injection as
+`LineCompleter`, and the same reason: the layering rule that nothing above
+`db.c` includes `<sqlite3.h>`, and the practical one that every colouring
+decision is then testable against a stub. The callbacks are asked once per
+identifier per keystroke, so not one of them may query: each answers from a
+cache `db.c` already keeps and invalidates on the schema cookie. Columns are
+looked up only in the tables `sql_context` reports for the statement, which is
+why `SELECT id` leaves `id` plain and `SELECT id FROM users` colours it.
+
+The payoff is that a name the database does not know stays the terminal's plain
+foreground, so a typo is visible before the statement is run.
+
+Nothing in the program hardcodes a colour. `theme.c` holds one SGR string per
+style, and the built-in palettes — `default`, `dark`, `light` and the
+16-colour-safe `basic` — are theme-file *text* inside the binary, parsed by the
+same parser a user's file goes through. There is nothing to install, and a
+shipped theme cannot use anything a user's theme may not.
+
+A theme file is INI: `[menu]`, `[syntax]` and `[output]` sections over
+`key = value` lines, where a value is attributes plus at most one foreground and
+one background colour (`bold blue`, `dim`, `underline #ff0080 on 52`, `none`).
+A line whose first non-blank character is `#` is a comment; `--` comments to end
+of line, as in SQL — `#` cannot, because a value is the one place a `#rrggbb`
+colour appears. Unknown sections, keys and values are reported and skipped: a
+typo costs the user that one line, never the palette and never the shell.
+
+`theme_dump` writes the live palette back out in that format, so `.theme` is a
+listing and a starting point for editing at once; a test asserts the round trip
+for every shipped palette. `.theme` also takes `list`, `reload`, `on`/`off`, or
+a built-in name or file path. The theme file lives at
+`$XDG_CONFIG_HOME/sqlsh/theme`, defaulting to `~/.config/sqlsh/theme`, and
+`-noinit` suppresses it exactly as it suppresses `~/.sqliterc`.
+
 ## Terminal handling
 
 `line.c` puts the terminal in raw mode with `tcsetattr`, restoring it from an
@@ -212,8 +266,8 @@ SGR). When `stdout` is not a tty, `sqlsh` reads lines with `fgets` and does no
 editing at all, so pipes keep working.
 
 Known edge cases, tracked rather than hidden: input lines longer than the
-terminal width, multi-line statement continuation, and UTF-8 display width.
-Byte-oriented handling comes first; width correctness follows in Phase 5.
+terminal width and multi-line statement continuation. UTF-8 display width is
+handled by `width.c` since Phase 5.
 
 ## Error handling conventions
 

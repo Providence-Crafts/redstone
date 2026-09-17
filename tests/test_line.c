@@ -5,11 +5,13 @@
  * answers isatty(), so a pty pair is opened with POSIX calls only —
  * posix_openpt and friends are in libc, so this costs no libutil dependency.
  */
+#include "hl.h"
 #include "line.h"
 #include "minunit.h"
 #include "suites.h"
 #include "theme.h"
 
+#include <ctype.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -471,6 +473,39 @@ static bool capture_has_sgr(const char *s)
 
 /* Open a pty wired to the fixture database, sized for a small menu. Returns
  * NULL when the platform has no ptys, which the caller treats as "skip". */
+/* A highlighter, so the pty tests see the bytes the user's terminal sees. It
+ * knows one keyword and nothing else: what is under test here is that line.c
+ * routes the redraw through hl.c at all, not which name gets which colour --
+ * that is test_hl.c's job. */
+static bool pty_is_keyword(void *ctx, const char *name, size_t len)
+{
+    static const char word[] = "select";
+    size_t i;
+
+    (void)ctx;
+    if (len != sizeof word - 1u) {
+        return false;
+    }
+    for (i = 0u; i < len; i++) {
+        if (tolower((unsigned char)name[i]) != word[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void pty_set_highlighter(Pty *pty)
+{
+    HlSchema schema;
+
+    schema.is_keyword = pty_is_keyword;
+    schema.is_function = NULL;
+    schema.is_table = NULL;
+    schema.is_column = NULL;
+    schema.ctx = NULL;
+    line_set_highlighter(pty->line, &schema);
+}
+
 static Db *comp_pty_open(Pty *pty)
 {
     Db *db;
@@ -492,6 +527,7 @@ static Db *comp_pty_open(Pty *pty)
         completer.ctx = db;
         line_set_completer(pty->line, &completer);
     }
+    pty_set_highlighter(pty);
     return db;
 }
 
@@ -651,6 +687,36 @@ static const char *test_pty_typing_narrows(void)
     return NULL;
 }
 
+/* The headline of Phase 7 over a real terminal: what is typed comes back
+ * coloured, in the styles the theme defines, without a redraw for each byte
+ * having to be parsed by the test. */
+static const char *test_pty_highlight(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    char capture[16384];
+    char want[128];
+    bool coloured;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_reset();
+    theme_set_colour(true);
+    (void)snprintf(want, sizeof want, "%sSELECT%s", theme_sgr(THEME_KEYWORD),
+                   theme_sgr(THEME_RESET));
+    pty_send(&pty, "SELECT x\r");
+    (void)line_read(pty.line, "> ");
+    pty_capture(&pty, capture, sizeof(capture));
+    coloured = strstr(capture, want) != NULL;
+    theme_set_colour(false);
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("the keyword was not drawn in the keyword style", coloured);
+    return NULL;
+}
+
 static const char *test_pty_no_color(void)
 {
     Pty pty;
@@ -670,6 +736,8 @@ static const char *test_pty_no_color(void)
     (void)setenv("NO_COLOR", "1", 1);
     theme_detect(pty.out);
 
+    /* The highlighter installed by comp_pty_open runs on this line too, so
+     * NO_COLOR is checked over syntax colour as well as over the menu. */
     pty_send(&pty, "SELECT * FROM \t\r\r");
     (void)line_read(pty.line, "> ");
     pty_capture(&pty, capture, sizeof(capture));
@@ -770,6 +838,7 @@ const char *line_suite(void)
     mu_run_test(test_pty_unique_draws_no_menu);
     mu_run_test(test_pty_escape_dismisses);
     mu_run_test(test_pty_typing_narrows);
+    mu_run_test(test_pty_highlight);
     mu_run_test(test_pty_no_color);
     mu_run_test(test_history_roundtrip);
     mu_run_test(test_history_missing_file);

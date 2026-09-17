@@ -17,6 +17,7 @@
 #include "import.h"
 #include "out.h"
 #include "schema.h"
+#include "theme.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -418,6 +419,49 @@ static bool cmd_read(Shell *sh, int argc, char **argv)
 
 /* Ours, not upstream's: the editor keymap. Upstream has no equivalent
  * because it has no editor of its own. */
+/* .theme: sqlsh's own. With no argument it prints the palette in the theme
+ * file's own format, so that the listing is also the starting point for a
+ * file: ".theme > ~/.config/sqlsh/theme" is how a user begins editing one. */
+static bool cmd_theme(Shell *sh, int argc, char **argv)
+{
+    FILE *out = shell_out(sh);
+    const char *arg = argc > 1 ? argv[1] : NULL;
+
+    if (arg == NULL || strcmp(arg, "dump") == 0) {
+        theme_dump(out);
+        return true;
+    }
+    if (strcmp(arg, "list") == 0) {
+        size_t i;
+
+        for (i = 0u; theme_name_at(i) != NULL; i++) {
+            fprintf(out, "%s\n", theme_name_at(i));
+        }
+        return true;
+    }
+    if (strcmp(arg, "on") == 0 || strcmp(arg, "off") == 0) {
+        bool on = dot_boolean(sh, arg);
+
+        theme_set_colour(on);
+        out_set_colour(db_out(shell_db(sh)), on);
+        return true;
+    }
+    if (strcmp(arg, "reload") == 0) {
+        char *path = theme_path();
+        bool ok;
+
+        if (path == NULL) {
+            fprintf(shell_err(sh), "sqlsh: no theme path: set HOME or XDG_CONFIG_HOME\n");
+            return false;
+        }
+        theme_reset();
+        ok = theme_load_file(path, shell_err(sh));
+        free(path);
+        return ok;
+    }
+    return theme_load(arg, shell_err(sh));
+}
+
 static bool cmd_editor(Shell *sh, int argc, char **argv)
 {
     Line *ln = shell_line(sh);
@@ -951,6 +995,7 @@ REFUSE("sha3sum","?OPTIONS?",        "Compute a SHA3 hash of database content", 
 {"system",    cmd_shell,             "CMD ARGS...",      "Run CMD ARGS... in a system shell",        NULL, A_NONE},
 {"tables",    schema_cmd_tables,     "?TABLE?",          "List names of tables matching LIKE pattern TABLE", NULL, A_TABLE},
 REFUSE("testcase","NAME",            "Begin redirecting output to NAME",                             "the TCL test harness"),
+{"theme",     cmd_theme,             "?NAME|FILE?",      "Show, load or reload the colour theme (sqlsh)", NULL, A_FILE},
 {"timeout",   cmd_timeout,           "MS",               "Try opening locked tables for MS milliseconds", NULL, A_NONE},
 {"timer",     cmd_timer,             "on|off",           "Turn SQL timer on or off",                 NULL, A_BOOL},
 {"trace",     cmd_trace,             "?OPTIONS?",        "Output each SQL statement as it is run",   NULL, A_FILE},

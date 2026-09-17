@@ -9,11 +9,13 @@
 #include "comp.h"
 #include "db.h"
 #include "dot.h"
+#include "hl.h"
 #include "line.h"
 #include "out.h"
 #include "shell.h"
 #include "theme.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,91 @@ static CompList *complete_for(void *ctx, const char *text, size_t cursor)
 
     sql_context(text, cursor, &sctx);
     return comp_generate(shell_db(sh), &sctx, dot_comp_source());
+}
+
+/* --------------------------------------------------------------------------
+ * The highlighter's view of the schema
+ *
+ * Each of these is asked once per identifier per keystroke, so not one of them
+ * may query: they read the lists db.c caches and drops on a schema change. The
+ * names arrive as spans of the line being edited rather than as C strings,
+ * which is why each copies before comparing.
+ * ------------------------------------------------------------------------ */
+
+static bool same_name(const char *candidate, const char *name, size_t len)
+{
+    size_t i;
+
+    for (i = 0u; i < len && candidate[i] != '\0'; i++) {
+        if (tolower((unsigned char)candidate[i]) != tolower((unsigned char)name[i])) {
+            return false;
+        }
+    }
+    return i == len && candidate[i] == '\0';
+}
+
+static bool as_name(char *buf, size_t size, const char *name, size_t len)
+{
+    if (len + 1u > size) {
+        return false;
+    }
+    memcpy(buf, name, len);
+    buf[len] = '\0';
+    return true;
+}
+
+static bool list_has(const DbList *list, const char *name, size_t len)
+{
+    size_t i;
+    size_t n = db_list_count(list);
+
+    for (i = 0u; i < n; i++) {
+        if (same_name(db_list_name(list, i), name, len)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool hl_is_keyword(void *ctx, const char *name, size_t len)
+{
+    char buf[SQL_NAME_MAX];
+
+    (void)ctx;
+    return as_name(buf, sizeof buf, name, len) && db_is_keyword(buf);
+}
+
+static bool hl_is_function(void *ctx, const char *name, size_t len)
+{
+    return list_has(db_functions(shell_db(ctx)), name, len);
+}
+
+static bool hl_is_table(void *ctx, const char *name, size_t len, bool *is_view)
+{
+    const DbList *tables = db_tables(shell_db(ctx));
+    size_t i;
+    size_t n = db_list_count(tables);
+
+    for (i = 0u; i < n; i++) {
+        if (same_name(db_list_name(tables, i), name, len)) {
+            *is_view = strcmp(db_list_detail(tables, i), "view") == 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool hl_is_column(void *ctx, const char *name, size_t len, const SqlCtxTable *tables,
+                         size_t ntables)
+{
+    size_t i;
+
+    for (i = 0u; i < ntables; i++) {
+        if (list_has(db_columns(shell_db(ctx), tables[i].name), name, len)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void usage(FILE *out)
@@ -215,6 +302,7 @@ int main(int argc, char **argv)
     Line *ln;
     Shell *sh;
     LineCompleter completer;
+    HlSchema highlighter;
 
     /* First pass: the flags that have to be known before the database is
      * opened, plus the position of the database name and of the first SQL
@@ -260,6 +348,16 @@ int main(int argc, char **argv)
         return 1;
     }
     theme_detect(stdout);
+    /* The theme is a preference file like the init file, so -noinit suppresses
+     * it too: "no configuration" has to mean all of it. */
+    if (!noinit) {
+        char *theme = theme_path();
+
+        if (theme != NULL) {
+            (void)theme_load_file(theme, stderr);
+            free(theme);
+        }
+    }
     out_set_colour(db_out(db), theme_colour());
 
     ln = line_new(stdin, stdout);
@@ -280,6 +378,12 @@ int main(int argc, char **argv)
     completer.generate = complete_for;
     completer.ctx = sh;
     line_set_completer(ln, &completer);
+    highlighter.is_keyword = hl_is_keyword;
+    highlighter.is_function = hl_is_function;
+    highlighter.is_table = hl_is_table;
+    highlighter.is_column = hl_is_column;
+    highlighter.ctx = sh;
+    line_set_highlighter(ln, &highlighter);
     if (force_batch) {
         line_set_interactive(ln, false);
     } else if (force_interactive) {
