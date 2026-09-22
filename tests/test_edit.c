@@ -333,6 +333,7 @@ static const char *test_completion_actions(void)
     Edit *ed = edit_new();
     bool tab;
     bool nav;
+    bool sideways;
     bool accept;
     bool cancel;
     bool inert;
@@ -348,6 +349,8 @@ static const char *test_completion_actions(void)
     nav = feed_last(ed, "\t") == EDIT_COMP_NEXT && feed_last(ed, "\x1b[Z") == EDIT_COMP_PREV &&
           feed_last(ed, "\x0e") == EDIT_COMP_NEXT && feed_last(ed, "\x10") == EDIT_COMP_PREV &&
           feed_last(ed, "\x1b[B") == EDIT_COMP_DOWN && feed_last(ed, "\x1b[A") == EDIT_COMP_UP;
+    /* Left and right are cursor keys even with a menu open. */
+    sideways = feed_last(ed, "\x1b[D") == EDIT_REDRAW && feed_last(ed, "\x1b[C") == EDIT_REDRAW;
     accept = feed_last(ed, "\r") == EDIT_COMP_ACCEPT;
     cancel = feed_last(ed, "\x07") == EDIT_COMP_CANCEL;
     edit_free(ed);
@@ -355,6 +358,7 @@ static const char *test_completion_actions(void)
     mu_assert("Tab should ask for completion", tab);
     mu_assert("navigation keys should be ordinary keys with no menu open", inert);
     mu_assert("a navigation key was not routed to the menu", nav);
+    mu_assert("left and right should move the cursor, not the selection", sideways);
     mu_assert("Enter should accept the selection", accept);
     mu_assert("Ctrl-G should dismiss the menu", cancel);
     return NULL;

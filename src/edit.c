@@ -903,7 +903,10 @@ static EditAction vi_normal_key(Edit *e, int key)
  *
  * Consulted first while a menu is open. Only the keys that mean something to a
  * menu are claimed; everything else falls through to ordinary editing, which
- * is what makes typing narrow the list rather than dismiss it.
+ * is what makes typing narrow the list rather than dismiss it. Left and right
+ * are deliberately not claimed: the menu is a vertical choice (up, down, Tab),
+ * and the horizontal arrows keep moving the cursor, after which the list is
+ * rebuilt for the word now under it.
  * ------------------------------------------------------------------------ */
 
 static EditAction completion_key(int key)
@@ -911,11 +914,9 @@ static EditAction completion_key(int key)
     switch (key) {
     case '\t':
     case CTRL('N'):
-    case K_RIGHT:
         return EDIT_COMP_NEXT;
     case K_SHIFT_TAB:
     case CTRL('P'):
-    case K_LEFT:
         return EDIT_COMP_PREV;
     case K_UP:
         return EDIT_COMP_UP;

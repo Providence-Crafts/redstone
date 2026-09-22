@@ -662,6 +662,29 @@ static const char *test_pty_escape_dismisses(void)
     return NULL;
 }
 
+/* The menu is a vertical choice: Left and Right must keep moving the cursor
+ * while it is open. Ctrl-G closes the menu, and the marker typed afterwards
+ * shows where the cursor ended up. */
+static const char *test_pty_arrows_move_cursor_in_menu(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    bool moved;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, "SELECT * FROM \t\x1b[D\x1b[D\x07X\r");
+    moved =
+        line_read(pty.line, "> ") == LINE_OK && strcmp(line_text(pty.line), "SELECT * FROXM ") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("Left/Right did not move the cursor while the menu was open", moved);
+    return NULL;
+}
+
 /* Typing after Tab narrows the open menu instead of dismissing it, which is
  * the behaviour that makes the menu worth opening. The buffer proves it: if
  * the menu had closed, Enter would end the line at the typed prefix, and if
@@ -838,6 +861,7 @@ const char *line_suite(void)
     mu_run_test(test_pty_unique_draws_no_menu);
     mu_run_test(test_pty_escape_dismisses);
     mu_run_test(test_pty_typing_narrows);
+    mu_run_test(test_pty_arrows_move_cursor_in_menu);
     mu_run_test(test_pty_highlight);
     mu_run_test(test_pty_no_color);
     mu_run_test(test_history_roundtrip);
