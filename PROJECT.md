@@ -635,6 +635,18 @@ decides nothing about appearance.
       headers and colour where the terminal supports it
 - [x] `--compat` (and `-compat`): restores upstream defaults exactly — `list`
       mode, `|` separator, headers off, no colour, no box
+- [x] screen-width shrinking: `.mode --sw`/`--screenwidth off|auto|N` and the
+      startup `-screenwidth N`/`-sw N` flags, porting upstream's
+      `qrfRestrictScreenWidth` (give up the margin first, then repeatedly
+      halve the widest non-fixed column) against our own border geometry
+      instead of its per-style formulas, so it falls out the same for box,
+      table, plain, markdown and column. Headers wrap the same way data cells
+      do (`columnar_header` now drives through `split_cell`, like
+      `columnar_row`), so a shrunk column's border still lines up. Enhanced
+      (non-`--compat`) mode auto-detects the terminal width via
+      `ioctl(TIOCGWINSZ)` and re-reads it before every result, so a live
+      resize is honoured; `--compat` and an explicit width both turn
+      auto-detection back off.
 
 **Checks**
 
@@ -654,6 +666,10 @@ decides nothing about appearance.
 - [x] a CJK string and a combining-character string align correctly in `box`
       and `column` (byte-compare against expected)
 - [x] `LC_ALL=C` falls back to ASCII borders, still aligned
+- [x] `--screenwidth`/`--sw off|auto|N` parsing, a narrow screen wrapping a
+      wide column onto more lines than the unrestricted layout, `off`
+      restoring it, and a `--widths`-pinned column staying untouched while its
+      unpinned neighbour gives up the width instead
 
 *Manual*
 
@@ -1029,3 +1045,4 @@ as phases land.
 | 6 | `alias sqlite3=sqlsh` for a day's work surfaces nothing missing | `make && alias sqlite3=$PWD/bin/sqlsh`, then use it for whatever the day brings. Anything that behaves differently from the real `sqlite3(1)` is a parity bug worth a line in the next phase. |
 | 7 | Colours are legible on both the owner's dark and light terminal profiles | `make && ./bin/sqlsh tests/test.db`, then type a statement mixing known and unknown names, e.g. `SELECT id, nosuch FROM employees WHERE 'x'`. Try `.theme dark`, `.theme light` and `.theme basic` under each terminal profile, and `.theme` to see the palette as a file. |
 | 6 | `-noinit` suppresses a `~/.sqliterc` that would otherwise be visible | Put `.mode box` in `~/.sqliterc`, run `./bin/sqlsh tests/test.db "SELECT 1;"` (box) and `./bin/sqlsh -noinit tests/test.db "SELECT 1;"` (list). Not automated: the suite will not plant files in a real `$HOME`. |
+| 5 | Resizing the terminal mid-session actually re-wraps the next result, live | `make && ./bin/sqlsh tests/test.db`, run a query with a wide row (`SELECT * FROM employees;`), then narrow the terminal window and re-run it without restarting `sqlsh`. The column shrinking should track the new width. Not automated: `ioctl(TIOCGWINSZ)` needs a real controlling terminal. |

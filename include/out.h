@@ -79,8 +79,18 @@ void out_set_colour(Out *out, bool on);
  * count and writes the array pointer to *WIDTHS. */
 size_t out_widths(const Out *out, const short **widths);
 
-/* The width of the terminal, for wrapping. Zero means unlimited. */
+/* The width of the terminal, for wrapping. Zero means unlimited. Setting an
+ * explicit width turns off auto-detection, matching an explicit --screenwidth
+ * N on the command line. */
 void out_set_screen_width(Out *out, unsigned cols);
+
+/* ON re-reads the terminal width from the tty via ioctl(TIOCGWINSZ) before
+ * every result, so a live resize is honoured; OFF (the default) leaves the
+ * width exactly as out_set_screen_width() last left it. main.c turns this on
+ * for its own interactive, non-compat use, which is the one case where
+ * byte-for-byte parity with sqlite3(1) is not the goal; --compat and
+ * --screenwidth/--sw N both turn it back off. */
+void out_set_auto_screen_width(Out *out, bool on);
 
 /* Apply the arguments of a `.mode` command: an optional mode name followed by
  * option flags (--wrap N, --quote ARG, --border on|off, ...). Returns false

@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define SQLSH_VERSION "0.1.0"
 
@@ -131,6 +132,7 @@ static void usage(FILE *out)
           "  -echo, -header, -noheader, -bail, -stats\n"
           "  -readonly, -safe, -nonce STRING\n"
           "  -separator SEP, -nullvalue TEXT, -newline SEP\n"
+          "  -screenwidth N, -sw N\n"
           "\n"
           "With no database, an in-memory one is used.\n"
           "Any SQL arguments are executed, after which sqlsh exits.\n",
@@ -173,9 +175,10 @@ static bool is_opt(const char *arg, const char *name)
  * anything. */
 static bool option_takes_value(const char *arg)
 {
-    static const char *const with_value[] = {
-        "separator", "nullvalue", "newline",   "init", "cmd",  "vfs",       "nonce",
-        "maxsize",   "lookaside", "pagecache", "mmap", "heap", "sorterref", "multiplex"};
+    static const char *const with_value[] = {"separator", "nullvalue", "newline",     "init",
+                                             "cmd",       "vfs",       "nonce",       "maxsize",
+                                             "lookaside", "pagecache", "mmap",        "heap",
+                                             "sorterref", "multiplex", "screenwidth", "sw"};
     size_t i;
 
     for (i = 0u; i < sizeof(with_value) / sizeof(with_value[0]); i++) {
@@ -265,6 +268,16 @@ static int apply_option(Shell *sh, char *const *argv, int i, int argc)
         return 2;
     } else if (is_opt(arg, "nullvalue")) {
         out_set_null_text(out, value);
+        return 2;
+    } else if (is_opt(arg, "screenwidth") || is_opt(arg, "sw")) {
+        char *end = NULL;
+        long n = value != NULL ? strtol(value, &end, 10) : 0;
+
+        if (value == NULL || *end != '\0' || n < 2) {
+            fprintf(stderr, "sqlsh: minimum --screenwidth is 2\n");
+            return -1;
+        }
+        out_set_screen_width(out, (unsigned)n);
         return 2;
     } else if (is_opt(arg, "cmd")) {
         /* Deferred: -cmd runs after the init files, in argv order, which is
@@ -359,6 +372,11 @@ int main(int argc, char **argv)
         }
     }
     out_set_colour(db_out(db), theme_colour());
+    /* Enhanced-mode default: shrink columnar output to fit the terminal, and
+     * re-read the width on every result so a live resize is honoured. A
+     * later --compat undoes this (out_set_compat turns it back off), and
+     * piped output never had a tty to size against, so it is inert there. */
+    out_set_auto_screen_width(db_out(db), isatty(fileno(stdout)) == 1);
 
     ln = line_new(stdin, stdout);
     if (ln == NULL) {

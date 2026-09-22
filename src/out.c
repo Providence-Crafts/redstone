@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 /* Upstream's defaults for the four limits, so that `--limits on` means the
  * same thing here as there. */
@@ -78,11 +80,12 @@ struct Out {
     bool split;
     bool colour;
     bool compat;
-    int wrap;        /* wrap cells wider than this; 0 = no wrapping */
-    int charlimit;   /* truncate a cell at this many characters; 0 = no limit */
-    int linelimit;   /* truncate a cell at this many lines; 0 = no limit */
-    int titlelimit;  /* truncate a column title at this width; 0 = no limit */
-    unsigned screen; /* terminal width, 0 = unknown */
+    int wrap;         /* wrap cells wider than this; 0 = no wrapping */
+    int charlimit;    /* truncate a cell at this many characters; 0 = no limit */
+    int linelimit;    /* truncate a cell at this many lines; 0 = no limit */
+    int titlelimit;   /* truncate a column title at this width; 0 = no limit */
+    unsigned screen;  /* terminal width, 0 = unknown */
+    bool screen_auto; /* re-read SCREEN from the tty before every result */
     unsigned multi_insert;
     Align dflt_align;
     Align *align; /* per-column overrides, nalign entries */
@@ -1264,8 +1267,12 @@ static Align align_of(const Out *o, size_t col)
     return numeric ? AL_RIGHT : o->dflt_align;
 }
 
-/* Natural widths, capped by --widths and --wrap. */
-static void layout(const Out *o, char *const *titles, size_t *widths, bool *multiline)
+/* Natural widths, capped by --widths and --wrap. NATURAL records each
+ * column's width before that cap, and FIXED whether --widths pinned it
+ * explicitly -- both of which restrict_screen_width() needs to decide how
+ * hard a column may be squeezed further. */
+static void layout(const Out *o, char *const *titles, size_t *widths, size_t *natural, bool *fixed,
+                   bool *multiline)
 {
     size_t i;
     size_t r;
@@ -1287,7 +1294,9 @@ static void layout(const Out *o, char *const *titles, size_t *widths, bool *mult
                 *multiline = true;
             }
         }
-        if (i < o->nwidths && o->widths[i] > 0) {
+        natural[i] = widths[i];
+        fixed[i] = i < o->nwidths && o->widths[i] > 0;
+        if (fixed[i]) {
             cap = (size_t)o->widths[i];
         } else if (o->wrap > 0) {
             cap = (size_t)o->wrap;
@@ -1302,30 +1311,152 @@ static void layout(const Out *o, char *const *titles, size_t *widths, bool *mult
     }
 }
 
+/* The terminal width to lay out against: SCREEN as last set, or, when
+ * auto-detection is on, whatever ioctl(TIOCGWINSZ) reports right now -- tried
+ * against the output stream first and then stdin/stderr, exactly as upstream
+ * falls back, with 80 as the last resort. Auto mode deliberately does not
+ * cache this: re-probing on every result is what makes a live resize work. */
+static unsigned resolve_screen_width(const Out *o)
+{
+    struct winsize ws;
+
+    if (!o->screen_auto) {
+        return o->screen;
+    }
+    if (o->stream != NULL && ioctl(fileno(o->stream), TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+        return ws.ws_col;
+    }
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+        return ws.ws_col;
+    }
+    if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+        return ws.ws_col;
+    }
+    return 80u;
+}
+
+#define OUT_MIN_SQUOZE 8u
+#define OUT_MIN_EX_SQUOZE 16u
+
+/* Upstream's qrfRestrictScreenWidth, adapted to our border geometry instead
+ * of its hard-coded per-style formulas: EDGE and SEP below come from the
+ * actual border strings, so box, table, plain, markdown and column all fall
+ * out of the same math. If the natural layout already fits, nothing changes.
+ * Otherwise the margin is given up first (upstream's cheap first move), then
+ * the widest non-fixed column is repeatedly halved -- never below
+ * OUT_MIN_SQUOZE, and only while it is either wide in absolute terms
+ * (OUT_MIN_EX_SQUOZE) or wide relative to its own natural width -- until the
+ * row fits or nothing eligible remains. Shrinking a column below its natural
+ * width is exactly what already makes columnar_row() wrap it via
+ * split_cell(), so no separate wrapping path is needed here. */
+static void restrict_screen_width(const Out *o, const Border *b, size_t *widths,
+                                  const size_t *natural, const bool *fixed, size_t *margin,
+                                  bool *multiline)
+{
+    unsigned screen = resolve_screen_width(o);
+    size_t ncol = (size_t)o->ncol;
+    size_t edge;
+    size_t sep;
+    size_t sumW = 0u;
+    size_t targetW;
+    long avail;
+    size_t i;
+
+    if (screen == 0u || ncol == 0u) {
+        return; /* no restriction requested, or nothing to lay out */
+    }
+    edge = width_of(b->left) + width_of(b->right);
+    sep = (ncol - 1u) * width_of(b->v);
+    for (i = 0u; i < ncol; i++) {
+        sumW += widths[i];
+    }
+    if (sumW + edge + sep + (ncol * 2u * *margin) <= (size_t)screen) {
+        return; /* already fits */
+    }
+
+    *margin = 0u;
+    avail = (long)screen - (long)edge - (long)sep;
+    targetW = avail > 0 ? (size_t)avail : 0u;
+
+    while (sumW > targetW) {
+        bool found = false;
+        size_t ix = 0u;
+        size_t mx = 0u;
+        size_t gain;
+
+        for (i = 0u; i < ncol; i++) {
+            size_t w = widths[i];
+
+            if (!fixed[i] && w > mx && w > OUT_MIN_SQUOZE &&
+                (w > OUT_MIN_EX_SQUOZE || w * 2u > natural[i])) {
+                ix = i;
+                mx = w;
+                found = true;
+            }
+        }
+        if (!found) {
+            break; /* nothing left that may shrink further */
+        }
+        gain = mx >= (size_t)OUT_MIN_SQUOZE * 2u ? mx / 2u : mx - OUT_MIN_SQUOZE;
+        if (sumW - gain < targetW) {
+            gain = sumW - targetW;
+        }
+        sumW -= gain;
+        widths[ix] -= gain;
+        *multiline = true;
+    }
+}
+
+/* A title that no longer fits its (possibly screen-shrunk) column wraps onto
+ * further header lines exactly as a data cell does, via the same split_cell:
+ * otherwise a narrowed column's header would overrun into its neighbour and
+ * the borders below it would no longer line up with anything above them. */
 static bool columnar_header(Out *o, Str *line, const Border *b, char *const *titles,
                             const size_t *widths, size_t margin)
 {
+    /* Zeroed so that the cleanup loop is safe whatever path reaches it. */
+    char **lines[OUT_MAX_COLUMNS] = {NULL};
+    size_t nlines[OUT_MAX_COLUMNS] = {0u};
+    size_t tallest = 1u;
     size_t i;
+    size_t l;
+    bool ok = true;
 
-    str_clear(line);
-    if (!str_puts(line, b->left)) {
-        return false;
-    }
     for (i = 0u; i < (size_t)o->ncol; i++) {
         /* An empty title rather than a missing one: the header row has to
          * have the same number of cells as the rule above and below it. */
         const char *title = titles[i] != NULL ? titles[i] : "";
 
-        if (i > 0u && !str_puts(line, b->v)) {
+        lines[i] = split_cell(title, widths[i], o->wordwrap, &nlines[i]);
+        if (lines[i] == NULL) {
+            while (i > 0u) {
+                i--;
+                free_lines(lines[i], nlines[i]);
+            }
             return false;
         }
-        if (!str_rep(line, " ", margin) ||
-            !line_pad(o, line, title, widths[i], AL_CENTER, THEME_HEADER) ||
-            !str_rep(line, " ", margin)) {
-            return false;
+        if (nlines[i] > tallest) {
+            tallest = nlines[i];
         }
     }
-    return str_puts(line, b->right) && w_line(o, line, b->trim);
+
+    for (l = 0u; ok && l < tallest; l++) {
+        str_clear(line);
+        ok = str_puts(line, b->left);
+        for (i = 0u; ok && i < (size_t)o->ncol; i++) {
+            const char *text = l < nlines[i] ? lines[i][l] : "";
+
+            ok = (i == 0u || str_puts(line, b->v)) && str_rep(line, " ", margin) &&
+                 line_pad(o, line, text, widths[i], AL_CENTER, THEME_HEADER) &&
+                 str_rep(line, " ", margin);
+        }
+        ok = ok && str_puts(line, b->right) && w_line(o, line, b->trim);
+    }
+
+    for (i = 0u; i < (size_t)o->ncol; i++) {
+        free_lines(lines[i], nlines[i]);
+    }
+    return ok;
 }
 
 static bool columnar_row(Out *o, Str *line, const Border *b, const size_t *widths, size_t margin,
@@ -1383,6 +1514,8 @@ static bool columnar_end(Out *o)
     /* Zeroed because an empty result reaches the border code without layout()
      * having run, and a border of no columns still reads the array. */
     size_t widths[OUT_MAX_COLUMNS] = {0u};
+    size_t natural[OUT_MAX_COLUMNS] = {0u};
+    bool fixed[OUT_MAX_COLUMNS] = {false};
     char *titles[OUT_MAX_COLUMNS] = {NULL};
     const Border *b = border_for(o);
     size_t margin = cell_margin(o);
@@ -1410,7 +1543,8 @@ static bool columnar_end(Out *o)
     }
     str_free(&buf);
     if (ok) {
-        layout(o, titles, widths, &multiline);
+        layout(o, titles, widths, natural, fixed, &multiline);
+        restrict_screen_width(o, b, widths, natural, fixed, &margin, &multiline);
         ok = line_rule(o, &line, b->top, widths, margin) &&
              (b->top[0] == NULL || w_line(o, &line, b->trim));
     }
@@ -1606,6 +1740,7 @@ void out_set_compat(Out *out)
 {
     out->compat = true;
     out->colour = false;
+    out->screen_auto = false;
     (void)out_set_mode(out, "list");
     out->headers = false;
 }
@@ -1674,6 +1809,12 @@ size_t out_widths(const Out *out, const short **widths)
 void out_set_screen_width(Out *out, unsigned cols)
 {
     out->screen = cols;
+    out->screen_auto = false;
+}
+
+void out_set_auto_screen_width(Out *out, bool on)
+{
+    out->screen_auto = on;
 }
 
 /* --------------------------------------------------------------------------
@@ -2125,10 +2266,24 @@ bool out_command(Out *out, int argc, const char *const *argv, FILE *err)
                 out->wordwrap = flag;
             }
             i++;
+        } else if (strcmp(a, "--sw") == 0 || strcmp(a, "--screenwidth") == 0) {
+            if (!need_value(argc, i, a, err)) {
+                return false;
+            }
+            if (strcmp(v, "off") == 0) {
+                out_set_screen_width(out, 0u);
+            } else if (strcmp(v, "auto") == 0) {
+                out_set_auto_screen_width(out, true);
+            } else if (parse_int(v, &num)) {
+                out_set_screen_width(out, (unsigned)num);
+            } else {
+                bad_value(err, "screen width", v);
+                return false;
+            }
+            i++;
         } else if (strcmp(a, "--wrap") == 0 || strcmp(a, "--charlimit") == 0 ||
                    strcmp(a, "--linelimit") == 0 || strcmp(a, "--titlelimit") == 0 ||
-                   strcmp(a, "--multiinsert") == 0 || strcmp(a, "--sw") == 0 ||
-                   strcmp(a, "--screenwidth") == 0) {
+                   strcmp(a, "--multiinsert") == 0) {
             if (!need_value(argc, i, a, err)) {
                 return false;
             }
@@ -2144,10 +2299,8 @@ bool out_command(Out *out, int argc, const char *const *argv, FILE *err)
                 out->linelimit = num;
             } else if (strcmp(a, "--titlelimit") == 0) {
                 out->titlelimit = num;
-            } else if (strcmp(a, "--multiinsert") == 0) {
-                out->multi_insert = (unsigned)num;
             } else {
-                out->screen = (unsigned)num;
+                out->multi_insert = (unsigned)num;
             }
             i++;
         } else {

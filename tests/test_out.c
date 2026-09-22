@@ -566,6 +566,122 @@ static const char *test_command_wrap_and_wordwrap(void)
     return NULL;
 }
 
+/* --------------------------------------------------------------------------
+ * --screenwidth / --sw: shrinking columnar output to fit the terminal.
+ * ------------------------------------------------------------------------ */
+
+static size_t count_lines(const char *s)
+{
+    size_t n = 0u;
+
+    for (; *s != '\0'; s++) {
+        if (*s == '\n') {
+            n++;
+        }
+    }
+    return n;
+}
+
+/* The width (in the rule line) of the COL-th column (0-based) of a
+ * table-mode rule line "+---+-----+...+": the run of fill characters between
+ * its opening and closing '+', i.e. the on-screen width of that column
+ * counting whatever margin the rule was drawn with. */
+static size_t rule_run(const char *line, int col)
+{
+    const char *p = line;
+    int skip = col + 1;
+
+    while (skip-- > 0) {
+        p = strchr(p, '+');
+        if (p == NULL) {
+            return 0u; /* fewer columns than the caller expected */
+        }
+        p++;
+    }
+    return strcspn(p, "+");
+}
+
+static const char *test_command_screenwidth_values(void)
+{
+    Out *out = out_new(NULL);
+
+    mu_assert("out_new failed", out != NULL);
+    mu_assert("--screenwidth off rejected", command2(out, "--screenwidth", "off"));
+    mu_assert("--screenwidth auto rejected", command2(out, "--screenwidth", "auto"));
+    mu_assert("--screenwidth 40 rejected", command2(out, "--screenwidth", "40"));
+    mu_assert("--sw 40 rejected", command2(out, "--sw", "40"));
+    mu_assert("bad --screenwidth value should be rejected",
+              !command2(out, "--screenwidth", "bogus"));
+
+    out_free(out);
+    return NULL;
+}
+
+static const char *test_screenwidth_wraps_wide_columns(void)
+{
+    Out *out = out_new(NULL);
+    static const char *const names[] = {"a", "b"};
+    const OutValue row[] = {{OUT_TEXT, "x", NULL, 0u},
+                            {OUT_TEXT, "a value much too long to fit a narrow terminal", NULL, 0u}};
+    char *got;
+    size_t baseline;
+
+    mu_assert("out_new failed", out != NULL);
+    mu_assert("bad mode name", out_set_mode(out, "table"));
+
+    /* No restriction: the query's one row is one physical line. */
+    got = capture(out, 2, names, row, 1u);
+    mu_assert("unrestricted capture failed", got != NULL);
+    baseline = count_lines(got);
+    free(got);
+
+    /* Too narrow for the natural widths: column b wraps onto more lines,
+     * which is the whole point -- the table stays readable instead of
+     * running off the edge of the terminal. */
+    mu_assert("--screenwidth rejected", command2(out, "--screenwidth", "20"));
+    got = capture(out, 2, names, row, 1u);
+    mu_assert("narrow capture failed", got != NULL);
+    mu_assert("a narrow screen should wrap onto more lines", count_lines(got) > baseline);
+    free(got);
+
+    /* --screenwidth off is the escape hatch back to the unrestricted layout. */
+    mu_assert("--screenwidth off rejected", command2(out, "--screenwidth", "off"));
+    got = capture(out, 2, names, row, 1u);
+    mu_assert("off capture failed", got != NULL);
+    mu_assert("off should restore the unrestricted layout", count_lines(got) == baseline);
+    free(got);
+
+    out_free(out);
+    return NULL;
+}
+
+/* A column pinned by --widths is exactly what the user asked for; shrinking
+ * it further to satisfy --screenwidth would silently override that request,
+ * so only the other, unpinned column may give up width. */
+static const char *test_screenwidth_leaves_fixed_widths_alone(void)
+{
+    Out *out = out_new(NULL);
+    static const char *const names[] = {"a", "b"};
+    const OutValue row[] = {{OUT_TEXT, "0123456789012345678901234567890123456789", NULL, 0u},
+                            {OUT_TEXT, "9876543210987654321098765432109876543210", NULL, 0u}};
+    char *got;
+
+    mu_assert("out_new failed", out != NULL);
+    mu_assert("bad mode name", out_set_mode(out, "table"));
+    mu_assert("--widths rejected", command2(out, "--widths", "30,0"));
+    mu_assert("--screenwidth rejected", command2(out, "--screenwidth", "25"));
+
+    got = capture(out, 2, names, row, 1u);
+    mu_assert("capture failed", got != NULL);
+    /* The top rule is the first line; column a's run of "-" is its width. */
+    mu_assert("the pinned column should keep its requested width", rule_run(got, 0) == 30u);
+    mu_assert("the unpinned column should have given up width instead", rule_run(got, 1) < 30u);
+    free(got);
+
+    out_free(out);
+    return NULL;
+}
+
 /* A bad value must be rejected, reported, and leave the formatter in a state
  * that still works -- not half-applied, not crashed. */
 static const char *test_command_rejects_bad_value(void)
@@ -724,6 +840,9 @@ const char *out_suite(void)
     mu_run_test(test_command_noquote_and_quote);
     mu_run_test(test_command_escape);
     mu_run_test(test_command_wrap_and_wordwrap);
+    mu_run_test(test_command_screenwidth_values);
+    mu_run_test(test_screenwidth_wraps_wide_columns);
+    mu_run_test(test_screenwidth_leaves_fixed_widths_alone);
     mu_run_test(test_command_rejects_bad_value);
     mu_run_test(test_box_border_locale_fallback);
     mu_run_test(test_no_colour_no_escapes);
