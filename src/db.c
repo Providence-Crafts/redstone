@@ -611,13 +611,20 @@ const DbList *db_tables(Db *db)
     cache_check(db);
     if (db->tables == NULL) {
         /* sqlite_temp_master is unioned in so that a temporary table is
-         * completable the moment it exists. */
+         * completable the moment it exists. The four schema tables are not
+         * rows of any schema -- sqlite_master does not describe itself -- yet
+         * they are the first thing anyone querying a database's structure
+         * types, so they are listed by hand. */
         db->tables = list_query(db->handle,
                                 "SELECT name, type FROM sqlite_master"
                                 "  WHERE type IN ('table','view')"
                                 " UNION ALL"
                                 " SELECT name, type FROM sqlite_temp_master"
                                 "  WHERE type IN ('table','view')"
+                                " UNION ALL"
+                                " SELECT column1, 'table' FROM (VALUES"
+                                "  ('sqlite_master'), ('sqlite_schema'),"
+                                "  ('sqlite_temp_master'), ('sqlite_temp_schema'))"
                                 " ORDER BY 1",
                                 NULL);
     }

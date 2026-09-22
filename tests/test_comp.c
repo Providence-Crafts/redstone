@@ -112,7 +112,8 @@ static const char *test_tables_and_views(void)
     const DbList *tables;
     bool found_table = false;
     bool found_view = false;
-    bool found_sqlite_internal = false;
+    int master = 0;
+    int schema = 0;
     size_t i;
 
     mu_assert("open failed", db != NULL);
@@ -127,14 +128,16 @@ static const char *test_tables_and_views(void)
             strcmp(db_list_detail(tables, i), "view") == 0) {
             found_view = true;
         }
-        if (strncmp(name, "sqlite_", 7u) == 0) {
-            found_sqlite_internal = true;
-        }
+        master += strcmp(name, "sqlite_master") == 0;
+        schema += strcmp(name, "sqlite_schema") == 0;
     }
     db_close(db);
     mu_assert("employees missing from db_tables", found_table);
     mu_assert("the view is missing or mislabelled", found_view);
-    mu_assert("sqlite internal tables should not be offered", !found_sqlite_internal);
+    /* Neither is a row of sqlite_master, so they are listed by hand; exactly
+     * once, or a database that ever did describe them would offer them twice. */
+    mu_assert("sqlite_master must be offered once", master == 1);
+    mu_assert("sqlite_schema must be offered once", schema == 1);
     return NULL;
 }
 
