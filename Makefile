@@ -126,12 +126,16 @@ LDFLAGS = $(MODE_LDFLAGS)
 
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
-TEST_SRCS = $(wildcard $(TEST_DIR)/*.c)
+# fuzz_tokenizer.c is excluded here: it is LLVMFuzzerTestOneInput, not a
+# minunit suite, and it has its own build rule below under -fsanitize=fuzzer.
+# Left in this glob it would compile into test_runner too, where nothing
+# calls it and -Wmissing-prototypes fires on the libFuzzer entry point.
+TEST_SRCS = $(filter-out $(TEST_DIR)/fuzz_tokenizer.c, $(wildcard $(TEST_DIR)/*.c))
 TEST_OBJS = $(patsubst $(TEST_DIR)/%.c, $(BUILD_DIR)/tests/%.o, $(TEST_SRCS))
 
 .PHONY: all release debug asan msan binary test run-tests fixtures reference \
         valgrind tidy cppcheck format format-check parity gate compdb watch \
-        install clean help
+        fuzz install clean help
 
 all: debug
 
@@ -216,10 +220,21 @@ endif
 # Quality & static analysis
 # ------------------------------------------------------------------------------
 
-valgrind: debug fixtures
+valgrind: debug fixtures $(BUILD_DIR)/tests/test_runner
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
 	         --error-exitcode=1 ./$(BIN_DIR)/$(TARGET_NAME) $(TEST_DIR)/test.db \
 	         'SELECT * FROM employees LIMIT 3;'
+	# The unit suite runs uninstrumented here rather than under `make test`'s
+	# ASan+UBSan build: both ASan and valgrind intercept malloc, and running
+	# one under the other reports nothing useful. MODE defaults to debug for
+	# this target (matching the `debug` prerequisite above), which is what
+	# builds $(BUILD_DIR)/tests/test_runner the plain way. --trace-children
+	# is what lets valgrind follow test_sigterm_restores_termios's fork(), so
+	# this is what makes the pty suite (line_suite) actually covered, not
+	# just skipped as "already sanitized elsewhere".
+	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
+	         --trace-children=yes --error-exitcode=1 \
+	         ./$(BUILD_DIR)/tests/test_runner
 
 # clang-tidy runs off compile_commands.json rather than a hand-passed flag
 # list, because flags after `--` lose the toolchain's own include paths.
@@ -239,7 +254,31 @@ TIDY_SYS_INCLUDES = $(shell $(CC) -E -Wp,-v -xc /dev/null 2>&1 | \
 TIDY_EXTRA = --extra-arg=-U_FORTIFY_SOURCE
 
 tidy: compile_commands.json
-	clang-tidy -p . $(TIDY_SYS_INCLUDES) $(TIDY_EXTRA) $(SRCS) $(TEST_SRCS)
+	clang-tidy -p . $(TIDY_SYS_INCLUDES) $(TIDY_EXTRA) $(SRCS) $(TEST_SRCS) $(TEST_DIR)/fuzz_tokenizer.c
+
+# A libFuzzer target over sqlctx.c's lexer and cursor-context analysis (see
+# tests/fuzz_tokenizer.c for what it exercises and why that module). Its own
+# build, not a MODE: libFuzzer needs -fsanitize=fuzzer, which nothing else in
+# this Makefile asks for, and the target is sqlctx.c alone -- it is the one
+# module that touches neither the heap nor a database, so nothing else needs
+# to be linked in.
+#
+# FUZZ_TIME bounds the run so it fits a CI job instead of running forever;
+# override it (make fuzz FUZZ_TIME=300) for a longer local session. A crash
+# or a hang past -timeout writes its reproducer next to the binary.
+FUZZ_TIME ?= 30
+FUZZ_BIN = build/fuzz_tokenizer
+
+fuzz: $(FUZZ_BIN)
+	./$(FUZZ_BIN) -max_total_time=$(FUZZ_TIME) -timeout=5
+
+$(FUZZ_BIN): $(TEST_DIR)/fuzz_tokenizer.c $(SRC_DIR)/sqlctx.c $(INC_DIR)/sqlctx.h | build
+	$(CC) $(STD) $(FEATURE_FLAGS) $(WARNING_FLAGS) -I$(INC_DIR) -I$(SRC_DIR) \
+	      -fsanitize=fuzzer,address,undefined -g -O1 \
+	      $(TEST_DIR)/fuzz_tokenizer.c $(SRC_DIR)/sqlctx.c -o $@
+
+build:
+	mkdir -p $@
 
 # --error-exitcode=1 makes any finding fail the gate, which means the purely
 # informational notes have to be silenced individually rather than by dropping
@@ -313,6 +352,7 @@ watch:
 
 install: release
 	install -Dm755 $(BIN_DIR)/$(TARGET_NAME) $(DESTDIR)$(PREFIX)/bin/$(TARGET_NAME)
+	install -Dm644 docs/sqlsh.1 $(DESTDIR)$(PREFIX)/share/man/man1/sqlsh.1
 
 $(BIN_DIR) $(BUILD_DIR) $(BUILD_DIR)/tests $(BUILD_DIR)/vendor:
 	mkdir -p $@
@@ -331,7 +371,7 @@ help:
 	@echo "  make reference        fetch sqlite shell.c into reference/"
 	@echo "  make SQLITE=vendored  build against the sqlite amalgamation"
 	@echo "  make parity           differential output-parity suite vs sqlite3(1)"
-	@echo "  make tidy cppcheck format compdb valgrind watch"
+	@echo "  make tidy cppcheck format compdb valgrind watch fuzz"
 	@echo "  make install PREFIX=~/.local"
 	@echo "  make gate SKIP_PARITY=1   skip the parity suite in the gate"
 	@echo ""

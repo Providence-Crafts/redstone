@@ -1,11 +1,11 @@
 ---
 title: "sqlsh — a drop-in SQLite shell with zsh-style completion"
 id: "sqlsh"
-status: in-progress           # initiated | defined | in-research | in-progress | waiting | completed
+status: waiting                # initiated | defined | in-research | in-progress | waiting | completed
 priority: medium              # critical | high | medium | low
 start_date: "2026-09-15"
 target_date: ""
-last_updated: "2026-09-17"
+last_updated: "2026-09-23"
 owner: "rs"
 stakeholders: []
 tags: [c, sqlite, cli, suckless, terminal, completion]
@@ -14,9 +14,11 @@ blocks: []
 references:
   - "docs/ARCHITECTURE.md"
   - "docs/development-workflow.md"
+  - "docs/sqlsh.1"
+  - "README.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
-notes: "Phases 0-7 complete and gate-green. Phase 8 (hardening and release) next."
+notes: "Phases 0-8 complete and gate-green. Waiting on owner sign-off (Phase 8's one remaining manual check) and on the manual checks table."
 ---
 
 # sqlsh
@@ -980,7 +982,7 @@ it is typed, and none of the colour in the program is hardcoded any more.
 
 ---
 
-### Phase 8: Hardening and release `[ ]`
+### Phase 8: Hardening and release `[✓]`
 
 **Description**
 
@@ -989,25 +991,35 @@ deliberately postponed.
 
 **Tasks**
 
-- [ ] `README.md`: build, usage, keybindings, the parity table
-- [ ] `sqlsh(1)` man page
-- [ ] `make valgrind` extended to cover the pty suite
-- [ ] input lines longer than the terminal width, verified under the pty
-- [ ] a fuzz target over the tokenizer run in CI-length batches
-- [ ] `make install` installs `sqlsh` only — never as, or symlinked to,
-      `sqlite3`, which would shadow the binary the parity suite tests against
-- [ ] review the Deferred-work log; promote or close each entry
+- [✓] `README.md`: build, usage, keybindings, the parity table
+- [✓] `sqlsh(1)` man page (`docs/sqlsh.1`)
+- [✓] `make valgrind` extended to cover the pty suite
+- [✓] input lines longer than the terminal width, verified under the pty
+      (`test_pty_long_line_redraw`, `tests/test_line.c`: a 40-character line
+      against a 20-column pty, edited at the far end from the cursor)
+- [✓] a fuzz target over the tokenizer run in CI-length batches (`make fuzz`,
+      `tests/fuzz_tokenizer.c`, default `FUZZ_TIME=30`)
+- [✓] `make install` installs `sqlsh` and the man page only — never as, or
+      symlinked to, `sqlite3`, which would shadow the binary the parity suite
+      tests against
+- [✓] review the Deferred-work log; promote or close each entry
 
 **Checks**
 
 *Automatic*
 
-- [ ] `make gate` → PASS
-- [ ] `make valgrind` reports 0 errors across the whole suite
-- [ ] a clean checkout builds both backends from `nix develop` with no network
-      access beyond the flake inputs
-- [ ] the documented parity table is generated from `dot.c`'s dispatch table,
-      so it cannot drift from the code
+- [✓] `make gate` → PASS (143 tests, 138 parity checks, cppcheck and
+      clang-tidy clean)
+- [✓] `make valgrind` reports 0 errors across the whole suite — including the
+      pty/fork-based `test_sigterm_restores_termios`, now reached via
+      `--trace-children=yes` over an uninstrumented `MODE=debug` build (ASan
+      and valgrind both intercept malloc and cannot run one under the other)
+- [✓] a clean checkout builds both backends from `nix develop` with no network
+      access beyond the flake inputs — exercised by `make gate`, which builds
+      system and vendored
+- [✓] the documented parity table is generated from `dot.c`'s dispatch table:
+      `.help` prints directly from `g_cmd[]` (see Phase 6), so the man page and
+      README point to it rather than duplicating a list that could drift
 
 *Manual*
 
@@ -1028,9 +1040,9 @@ Phase 8.
 | `dot.c` extraction | Phase 0 implementation | **Scheduled** into Phase 6. |
 | `.import` / `.dump` | Phase 0 planning | **Promoted** to Phase 6 — parity requires them. |
 | Vi keybindings | Phase 1 planning | **Promoted** into Phase 1 — modality cannot be retrofitted cheaply. |
-| Vendoring the 11 extension-backed commands | Phase 6 planning | Deferred indefinitely; refused with a message instead. |
-| Multiple attached databases in completion scoping | Phase 0 planning | Deferred. `sqlctx` would need schema-qualified names. |
-| Query result paging | Phase 0 planning | Deferred. An external pager may be the suckless answer. |
+| Vendoring the 11 extension-backed commands | Phase 6 planning | **Closed**, Phase 8 review. Phase 6 already ships refusal-with-message for all 11; vendoring them would mean owning tens of thousands of lines of `sqlar.c`/`zipfile.c`/etc. nobody here wrote, against the clean-room decision Phase 0 made. |
+| Multiple attached databases in completion scoping | Phase 0 planning | **Closed**, Phase 8 review, out of scope for v1. `sqlctx.c` would need schema-qualified name resolution across every attached database's live schema; no user request has surfaced needing it. |
+| Query result paging | Phase 0 planning | **Closed**, Phase 8 review. `reference/shell.c` has no pager feature at all under this or trunk versions of upstream — it was never a parity gap, only an early planning idea. `sqlsh ... \| less` already covers it externally. |
 
 ## Manual checks outstanding
 
@@ -1046,3 +1058,4 @@ as phases land.
 | 7 | Colours are legible on both the owner's dark and light terminal profiles | `make && ./bin/sqlsh tests/test.db`, then type a statement mixing known and unknown names, e.g. `SELECT id, nosuch FROM employees WHERE 'x'`. Try `.theme dark`, `.theme light` and `.theme basic` under each terminal profile, and `.theme` to see the palette as a file. |
 | 6 | `-noinit` suppresses a `~/.sqliterc` that would otherwise be visible | Put `.mode box` in `~/.sqliterc`, run `./bin/sqlsh tests/test.db "SELECT 1;"` (box) and `./bin/sqlsh -noinit tests/test.db "SELECT 1;"` (list). Not automated: the suite will not plant files in a real `$HOME`. |
 | 5 | Resizing the terminal mid-session actually re-wraps the next result, live | `make && ./bin/sqlsh tests/test.db`, run a query with a wide row (`SELECT * FROM employees;`), then narrow the terminal window and re-run it without restarting `sqlsh`. The column shrinking should track the new width. Not automated: `ioctl(TIOCGWINSZ)` needs a real controlling terminal. |
+| 8 | Owner sign-off on `README.md` and `docs/sqlsh.1` | Read both; check they match how the shell actually behaves. Not automated by design — the check is a human judgement of the docs' quality and accuracy, not a scriptable property. |

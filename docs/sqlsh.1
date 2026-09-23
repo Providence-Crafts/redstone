@@ -1,0 +1,272 @@
+.TH SQLSH 1 "2026" "sqlsh 0.1.0" "User Commands"
+.SH NAME
+sqlsh \- a SQLite shell with zsh-style completion, drop-in for sqlite3(1)
+.SH SYNOPSIS
+.B sqlsh
+.RI [ options ]
+.RI [ database ]
+.RI [ sql\ ... ]
+.SH DESCRIPTION
+.B sqlsh
+is an interactive and batch SQL shell for SQLite, built to be run wherever
+.BR sqlite3 (1)
+is run today.
+Every dot command, output mode and command-line flag that
+.BR sqlite3 (1)
+accepts is either implemented to the same behaviour or refused with an
+explicit message, never silently ignored (see
+.B PARITY
+below); an
+.B alias sqlite3=sqlsh
+is meant to survive a normal day's work.
+.PP
+On top of that baseline,
+.B sqlsh
+adds a zsh-style completion menu (table, column and dot-command names,
+narrowed as you type and browsed with the arrow keys or Tab), live
+syntax highlighting of the statement being typed, a colour theme system,
+and output that is easier to read by default \(em box-drawn tables with
+headers and colour, sized to the terminal, rather than
+.BR sqlite3 (1)'s
+plain
+.B |\-separated
+batch format. The
+.B \-\-compat
+flag turns all of that off and reproduces
+.BR sqlite3 (1)'s
+behaviour exactly.
+.PP
+With no
+.I database
+argument, an in-memory database is used, exactly as in
+.BR sqlite3 (1).
+Any
+.I sql
+arguments after the database name are executed as a batch, after which
+.B sqlsh
+exits; with none, it opens the interactive prompt (or reads statements
+from standard input, if that is not a terminal).
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show a short usage summary and exit.
+.TP
+.BR \-v ", " \-\-version
+Print the sqlsh and linked SQLite version and exit.
+.TP
+.B \-\-compat
+Format results exactly as
+.BR sqlite3 (1)'s
+batch mode does: \fBlist\fR output mode, \fB|\fR column separator, headers
+off, no colour, no box drawing. Also turns off screen-width auto-detection
+(see
+.B \-screenwidth
+below). Everything downstream of this flag is covered by a byte-exact
+differential test suite against the real
+.BR sqlite3 (1)
+binary.
+.TP
+.BI \- MODE
+Start in \fIMODE\fR: one of
+.BR ascii ", " box ", " column ", " csv ", " html ", " json ", " line ", "
+.BR list ", " markdown ", " quote ", " table ", " tabs .
+(\fB.mode\fR inside the shell accepts a larger set, including \fBinsert\fR,
+\fBtcl\fR and \fBqbox\fR, that
+.BR sqlite3 (1)
+itself does not accept as a command-line flag either.)
+.TP
+.BI \-init " FILE"
+Read \fIFILE\fR instead of the default init files
+(\fB~/.sqliterc\fR and the sqlsh-specific \fBsqlshrc\fR, see
+.B FILES
+below).
+.TP
+.B \-noinit
+Read no init file and no theme file: "no configuration" means all of it,
+not just the SQLite half.
+.TP
+.BI \-cmd " COMMAND"
+Run \fICOMMAND\fR (a dot command or a SQL statement) after the init files
+and before reading standard input. May be given more than once; they run
+in the order given.
+.TP
+.BR \-batch ", " \-interactive
+Force batch or interactive mode regardless of whether standard input is a
+terminal.
+.TP
+.BR \-echo ", " \-header ", " \-noheader ", " \-bail ", " \-stats
+Echo each statement before running it; force column headers on or off;
+stop on the first error; print row-count/timing statistics after each
+statement.
+.TP
+.B \-readonly
+Open the database read-only.
+.TP
+.B \-safe
+Refuse commands capable of doing damage outside the database file itself
+(\fB.shell\fR, \fB.system\fR, writing outside the working directory, and
+similar) \(em intended for running an untrusted script.
+.TP
+.BI \-nonce " STRING"
+Pairs with \fB.nonce\fR: a command prefixed with the matching nonce is
+exempt from \fB\-safe\fR for that one line.
+.TP
+.BI \-separator " SEP"
+.TQ
+.BI \-nullvalue " TEXT"
+.TQ
+.BI \-newline " SEP"
+Set the column separator, the text printed for a NULL value, and the row
+separator, the same as the like-named \fB.\fR commands.
+.TP
+.BI \-screenwidth " N" ", " \-sw " N"
+Fix the terminal width used to shrink wide columnar output to \fIN\fR
+(minimum 2), the same as \fB.mode \-\-screenwidth N\fR. Without this flag,
+interactive non-\fB\-\-compat\fR mode auto-detects the real terminal width
+via the controlling tty and re-reads it before every result, so resizing
+the window takes effect on the next query; \fB\-\-compat\fR and this flag
+both turn auto-detection off, which is what keeps \fB\-\-compat\fR output
+byte-identical to a fixed-width run of
+.BR sqlite3 (1).
+.SH OUTPUT MODES
+Set with \fB\-MODE\fR on the command line or \fB.mode MODE\fR inside the
+shell. The default, interactive or not, is \fBbox\fR with headers and
+colour; \fB\-\-compat\fR switches the default to \fBlist\fR with headers
+off, matching
+.BR sqlite3 (1).
+.PP
+Byte-for-byte parity with the linked
+.BR sqlite3 (1)
+binary under \fB\-\-compat\fR is asserted by the test suite (\fBmake
+parity\fR) for the thirteen classic modes: \fBascii box column csv html
+insert json line list markdown quote table tabs\fR. The remaining modes
+.RB ( c ", " count ", " jatom ", " jobject ", " off ", " psql ", " qbox ", "
+.BR split ", " tcl )
+are best-effort.
+.PP
+Each mode accepts option flags after its name, e.g.
+.BR ".mode box --wrap 40 --screenwidth 100" ;
+see \fB.help mode\fR inside the shell for the full set.
+.SH DOT COMMANDS
+Commands beginning with \fB.\fR configure the session rather than querying
+the database, exactly as in
+.BR sqlite3 (1).
+Run
+.B .help
+inside the shell for the complete, current list with one-line
+descriptions \(em duplicating it here would only let this page drift out
+of sync with the binary. Commands used most often:
+.TP
+.BI \.mode " MODE"
+Set the output mode (see \fBOUTPUT MODES\fR).
+.TP
+.BI \.tables\ ? PATTERN ?
+List tables.
+.TP
+.BI \.schema\ ? PATTERN ?
+Show \fBCREATE\fR statements.
+.TP
+.BI \.import " FILE TABLE"
+Import CSV or delimited data.
+.TP
+.BI \.dump\ ? PATTERN ?
+Render the database as SQL.
+.TP
+.BI \.open " FILE"
+Close the current database, open another.
+.TP
+.B \.headers \fRon|off
+Toggle column headers.
+.TP
+.BI \.width " N N ..."
+Set fixed per-column widths.
+.PP
+Two commands are sqlsh-specific, not part of
+.BR sqlite3 (1):
+.TP
+.B .theme \fR[\fINAME\fR|\fIFILE\fR]
+With no argument, print the active palette as a loadable theme file. With
+a name (\fBdark\fR, \fBlight\fR, \fBbasic\fR, \fBno\-color\fR) or a file
+path, load that theme for the session.
+.TP
+.B .editor \fRemacs|vi
+Switch the line-editor's keymap without restarting.
+.PP
+Eleven commands that would need an upstream SQLite extension this build
+does not vendor
+.RB ( .archive ", " .recover ", " .expert ", " and similar)
+are recognised and refused with a message naming what they need, rather
+than being silently accepted and doing nothing.
+.SH PARITY
+.B sqlsh \-\-compat
+is meant to be indistinguishable from
+.BR sqlite3 (1)
+for scripting: same flags, same dot commands, same byte output. Where it
+knowingly is not \(em an extension SQLite build this binary lacks, a mode
+the shipped
+.BR sqlite3 (1)
+binary itself rejects, and similar \(em the difference is refused loudly
+rather than silently approximated. Outside \fB\-\-compat\fR, sqlsh is
+intentionally not upstream: prettier output, a completion menu, and
+highlighting are the reason to run it instead.
+.SH FILES
+.TP
+.B ~/.sqliterc
+Read at startup unless \fB\-init\fR, \fB\-noinit\fR or \fB\-cmd\fR redirect
+it; for parity with
+.BR sqlite3 (1).
+.TP
+.B $XDG_CONFIG_HOME/sqlsh/sqlshrc \fR(or \fB~/.config/sqlsh/sqlshrc\fR)
+Read after \fB~/.sqliterc\fR, so a setting here wins over the same setting
+there. sqlsh-specific: not read by
+.BR sqlite3 (1).
+.TP
+.B $XDG_CONFIG_HOME/sqlsh/theme \fR(or \fB~/.config/sqlsh/theme\fR)
+The colour theme file, in the format \fB.theme\fR with no argument
+prints. Also suppressed by \fB\-noinit\fR.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+Any non-empty value disables colour output, overriding theme detection.
+.TP
+.B TERM
+.B dumb
+disables colour and Unicode box drawing (ASCII borders are used
+instead); a non-tty output stream disables colour regardless of
+.BR TERM .
+.TP
+.B XDG_CONFIG_HOME
+Base directory for \fBsqlshrc\fR and the theme file; see
+.B FILES
+above.
+.SH EXIT STATUS
+.B 0
+on a clean exit or a script's last statement succeeding;
+.B 1
+on a SQL error with \fB\-bail\fR or in the default non-interactive
+"stop on error" behaviour that matches
+.BR sqlite3 (1);
+.B 2
+on a command-line usage error (unknown or malformed option).
+.SH EXAMPLES
+.TP
+.B sqlsh mydb.db
+Open \fBmydb.db\fR interactively with completion, highlighting and box
+output.
+.TP
+.B sqlsh --compat mydb.db "SELECT * FROM t;" > out.txt
+Run one query in a script exactly as
+.BR sqlite3 (1)
+would.
+.TP
+.B sqlsh -box -screenwidth 100 mydb.db
+Force box output shrunk to fit a 100-column terminal regardless of the
+real one, e.g. when piping into a fixed-width report.
+.SH SEE ALSO
+.BR sqlite3 (1)
+.SH BUGS
+Parity is asserted automatically only for the thirteen classic output
+modes and the dot commands this build implements; a difference in a
+best-effort mode is a documentation gap, not silently accepted behaviour
+\(em see the project's own gap list in \fBPROJECT.md\fR for the current,
+complete set.

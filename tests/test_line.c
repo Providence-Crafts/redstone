@@ -423,6 +423,38 @@ static void pty_resize(const Pty *pty, unsigned short cols, unsigned short rows)
     (void)ioctl(pty->master, TIOCSWINSZ, &ws);
 }
 
+/* A line longer than the terminal wraps onto more than one row; editing at
+ * the far end from where the cursor lands exercises the multi-row redraw
+ * arithmetic that a line shorter than the terminal never touches. */
+static const char *test_pty_long_line_redraw(void)
+{
+    Pty pty;
+    bool correct;
+    LineStatus st;
+    char expect[42];
+    int i;
+
+    if (!pty_open(&pty)) {
+        return NULL;
+    }
+    pty_resize(&pty, 20, 24);
+    (void)pty_set_raw(&pty);
+    for (i = 0; i < 40; i++) {
+        pty_send(&pty, "x");
+    }
+    /* Ctrl-A (start of line), insert Y, Enter. */
+    pty_send(&pty, "\x01Y\r");
+    st = line_read(pty.line, "sqlsh> ");
+    expect[0] = 'Y';
+    memset(expect + 1, 'x', 40);
+    expect[41] = '\0';
+    correct = st == LINE_OK && strcmp(line_text(pty.line), expect) == 0;
+    pty_close(&pty);
+
+    mu_assert("editing a line wider than the terminal produced the wrong buffer", correct);
+    return NULL;
+}
+
 /* Read whatever the shell has written, stopping once the stream goes quiet. */
 static void pty_capture(const Pty *pty, char *buf, size_t cap)
 {
@@ -855,6 +887,7 @@ const char *line_suite(void)
     mu_run_test(test_pty_restores_termios);
     mu_run_test(test_plain_emits_no_escapes);
     mu_run_test(test_sigterm_restores_termios);
+    mu_run_test(test_pty_long_line_redraw);
     mu_run_test(test_pty_completion_scenarios);
     mu_run_test(test_pty_select_list_scope);
     mu_run_test(test_pty_dot_completion);
