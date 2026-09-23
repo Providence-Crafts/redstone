@@ -8,6 +8,7 @@
  */
 #include "comp.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -494,7 +495,22 @@ static void add_values(Gen *g, const SqlContext *ctx)
     }
 }
 
-static void add_dot_commands(Gen *g, const CompDotSource *dots)
+/* "name" prefixed with a leading dot, for the case where none has been typed
+ * yet (CTX_STATEMENT_START) and the completion must supply one: a dot
+ * command is never valid input without it, so an insertion missing the dot
+ * would hand back text that is neither a dot command nor SQL. */
+static char *dup_dotted(const char *name)
+{
+    size_t n = strlen(name) + 2u;
+    char *copy = malloc(n);
+
+    if (copy != NULL) {
+        (void)snprintf(copy, n, ".%s", name);
+    }
+    return copy;
+}
+
+static void add_dot_commands(Gen *g, const CompDotSource *dots, bool with_dot)
 {
     size_t i;
 
@@ -504,6 +520,8 @@ static void add_dot_commands(Gen *g, const CompDotSource *dots)
     for (i = 0u;; i++) {
         const char *name = NULL;
         const char *help = NULL;
+        char *text;
+        char *display;
 
         if (!dots->command(i, &name, &help)) {
             break;
@@ -511,7 +529,9 @@ static void add_dot_commands(Gen *g, const CompDotSource *dots)
         if (name == NULL || !has_prefix_fold(name, g->prefix)) {
             continue;
         }
-        (void)list_take(g->list, dup_str(name), dup_str(name), dup_str(help != NULL ? help : ""),
+        text = with_dot ? dup_dotted(name) : dup_str(name);
+        display = with_dot ? dup_dotted(name) : dup_str(name);
+        (void)list_take(g->list, text, display, dup_str(help != NULL ? help : ""),
                         COMP_DOT_COMMAND);
     }
 }
@@ -624,13 +644,13 @@ CompList *comp_generate(Db *db, const SqlContext *ctx, const CompDotSource *dots
 
     switch (ctx->kind) {
     case CTX_DOT_COMMAND:
-        add_dot_commands(&g, dots);
+        add_dot_commands(&g, dots, false);
         break;
     case CTX_DOT_ARG:
         add_dot_arg(&g, ctx, dots);
         break;
     case CTX_STATEMENT_START:
-        add_dot_commands(&g, dots);
+        add_dot_commands(&g, dots, true);
         add_keywords(&g);
         break;
     case CTX_SELECT_LIST:

@@ -580,6 +580,30 @@ static const char *test_dot_source(void)
     return NULL;
 }
 
+/* At the very start of a line, before any dot has been typed, a dot command
+ * is still offered (alongside SQL keywords) -- but accepting it must insert
+ * the leading dot too. Without one, the inserted text is neither a dot
+ * command nor valid SQL. */
+static const char *test_dot_at_statement_start(void)
+{
+    static const CompDotSource dots = {fake_command, fake_arg_kind};
+    Db *db = open_fixture();
+    CompList *list;
+    bool offered;
+    bool dotted;
+
+    mu_assert("open failed", db != NULL);
+    list = complete(db, "^", &dots);
+    offered = has(list, ".schema");
+    dotted = offered && strcmp(text_of(list, ".schema"), ".schema") == 0;
+    comp_free(list);
+    db_close(db);
+
+    mu_assert("a dot command should be offered at the start of a line", offered);
+    mu_assert("its insertion text must carry the leading dot", dotted);
+    return NULL;
+}
+
 const char *comp_suite(void)
 {
     mu_run_test(test_fixture_present);
@@ -597,5 +621,6 @@ const char *comp_suite(void)
     mu_run_test(test_cache_invalidation);
     mu_run_test(test_other_contexts);
     mu_run_test(test_dot_source);
+    mu_run_test(test_dot_at_statement_start);
     return NULL;
 }
