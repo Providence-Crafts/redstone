@@ -115,6 +115,38 @@ static const char *test_emacs_edit(void)
     return NULL;
 }
 
+/* Regression: backspace at end-of-line used to double-decrement the cursor
+ * (buf_delete()'s own clamp moved it back, then the caller moved it again),
+ * so every backspace after the first deleted the character before the one
+ * intended and the true last character was never reached. Repeated
+ * backspaces must fully clear the buffer, one character at a time, with the
+ * cursor always tracking the length. */
+static const char *test_backspace_repeated(void)
+{
+    Edit *ed = edit_new();
+    const char *text = "positions";
+    size_t n = strlen(text);
+    size_t i;
+    bool ok = true;
+
+    mu_assert("edit_new failed", ed != NULL);
+    feed(ed, text);
+    for (i = 0u; i < n; i++) {
+        size_t before = edit_len(ed);
+
+        (void)edit_feed(ed, 0x7f);
+        if (edit_len(ed) != before - 1u || edit_cursor(ed) != edit_len(ed)) {
+            ok = false;
+        }
+    }
+    mu_assert("repeated backspace should fully and correctly clear the buffer", ok);
+    mu_assert("buffer should be empty", edit_len(ed) == 0u);
+    mu_assert("buffer text should be empty", strcmp(edit_buffer(ed), "") == 0);
+
+    edit_free(ed);
+    return NULL;
+}
+
 static const char *test_actions(void)
 {
     Edit *ed = edit_new();
@@ -342,15 +374,19 @@ static const char *test_completion_actions(void)
     tab = feed_last(ed, "sel\t") == EDIT_COMPLETE && !edit_is_completing(ed);
 
     /* Until the caller says a menu is open, the navigation keys keep their
-     * ordinary meanings -- Ctrl-P must still walk history. */
-    inert = feed_last(ed, "\x10") != EDIT_COMP_PREV;
+     * ordinary meanings -- Ctrl-P must still walk history, and the arrows
+     * still move the cursor. */
+    inert = feed_last(ed, "\x10") != EDIT_COMP_PREV && feed_last(ed, "\x1b[D") != EDIT_COMP_PREV &&
+            feed_last(ed, "\x1b[C") != EDIT_COMP_NEXT;
 
     edit_completing(ed, true);
     nav = feed_last(ed, "\t") == EDIT_COMP_NEXT && feed_last(ed, "\x1b[Z") == EDIT_COMP_PREV &&
           feed_last(ed, "\x0e") == EDIT_COMP_NEXT && feed_last(ed, "\x10") == EDIT_COMP_PREV &&
           feed_last(ed, "\x1b[B") == EDIT_COMP_DOWN && feed_last(ed, "\x1b[A") == EDIT_COMP_UP;
-    /* Left and right are cursor keys even with a menu open. */
-    sideways = feed_last(ed, "\x1b[D") == EDIT_REDRAW && feed_last(ed, "\x1b[C") == EDIT_REDRAW;
+    /* With a menu open, left/right drive the selection too -- the edit
+     * buffer's cursor never moves while a choice is being made. */
+    sideways =
+        feed_last(ed, "\x1b[D") == EDIT_COMP_PREV && feed_last(ed, "\x1b[C") == EDIT_COMP_NEXT;
     accept = feed_last(ed, "\r") == EDIT_COMP_ACCEPT;
     cancel = feed_last(ed, "\x07") == EDIT_COMP_CANCEL;
     edit_free(ed);
@@ -358,7 +394,7 @@ static const char *test_completion_actions(void)
     mu_assert("Tab should ask for completion", tab);
     mu_assert("navigation keys should be ordinary keys with no menu open", inert);
     mu_assert("a navigation key was not routed to the menu", nav);
-    mu_assert("left and right should move the cursor, not the selection", sideways);
+    mu_assert("left and right should drive the menu selection while it is open", sideways);
     mu_assert("Enter should accept the selection", accept);
     mu_assert("Ctrl-G should dismiss the menu", cancel);
     return NULL;
@@ -409,6 +445,7 @@ const char *edit_suite(void)
     mu_run_test(test_insert_and_cursor);
     mu_run_test(test_emacs_motion);
     mu_run_test(test_emacs_edit);
+    mu_run_test(test_backspace_repeated);
     mu_run_test(test_actions);
     mu_run_test(test_escape_swallowed);
     mu_run_test(test_history);

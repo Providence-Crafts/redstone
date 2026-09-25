@@ -613,12 +613,20 @@ static EditAction emacs_transpose(Edit *e)
 static EditAction emacs_delete(Edit *e, int key)
 {
     if (key == K_BACKSPACE || key == CTRL('H')) {
+        size_t at;
+
         if (e->pos == 0u) {
             return EDIT_BELL;
         }
         undo_save(e);
-        buf_delete(e, e->pos - 1u, e->pos);
-        e->pos--;
+        at = e->pos - 1u;
+        buf_delete(e, at, e->pos);
+        /* Set the cursor from `at` rather than decrementing e->pos again:
+         * buf_delete() already clamps e->pos down to the new length when the
+         * cursor was at the end, so a further e->pos-- would double-count
+         * that adjustment and leave the cursor, and every backspace after
+         * it, one character short of where it belongs. */
+        e->pos = at;
         return EDIT_REDRAW;
     }
     /* K_DEL, and Ctrl-D with a non-empty buffer. */
@@ -903,10 +911,10 @@ static EditAction vi_normal_key(Edit *e, int key)
  *
  * Consulted first while a menu is open. Only the keys that mean something to a
  * menu are claimed; everything else falls through to ordinary editing, which
- * is what makes typing narrow the list rather than dismiss it. Left and right
- * are deliberately not claimed: the menu is a vertical choice (up, down, Tab),
- * and the horizontal arrows keep moving the cursor, after which the list is
- * rebuilt for the word now under it.
+ * is what makes typing narrow the list rather than dismiss it. While the menu
+ * is open, all four arrows drive it (left/right step one item, same as
+ * Tab/Shift-Tab; up/down step one row) -- the cursor stays put until the menu
+ * is closed with Enter/Esc/Ctrl-C or narrowed away by typing.
  * ------------------------------------------------------------------------ */
 
 static EditAction completion_key(int key)
@@ -914,9 +922,11 @@ static EditAction completion_key(int key)
     switch (key) {
     case '\t':
     case CTRL('N'):
+    case K_RIGHT:
         return EDIT_COMP_NEXT;
     case K_SHIFT_TAB:
     case CTRL('P'):
+    case K_LEFT:
         return EDIT_COMP_PREV;
     case K_UP:
         return EDIT_COMP_UP;
