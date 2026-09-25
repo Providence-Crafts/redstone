@@ -818,6 +818,33 @@ static const char *test_pretty_by_default(void)
     return NULL;
 }
 
+/* box mode's default --linelimit (5) truncates a cell that wraps into more
+ * rows than that, but the wrapped lines past the limit were never freed --
+ * only ASan/LSan can see the leak, so the test just has to exercise the
+ * path; a leak-checked run of the suite is what actually catches a
+ * regression. */
+static const char *test_linelimit_frees_truncated_lines(void)
+{
+    Out *out = out_new(NULL);
+    static const char *const names[] = {"v"};
+    const OutValue tall[] = {{OUT_TEXT, "one two three four five six seven", NULL, 0u}};
+    char *got;
+
+    mu_assert("out_new failed", out != NULL);
+    mu_assert("--width rejected", command2(out, "--width", "3"));
+    out_set_headers(out, false);
+    got = capture(out, 1, names, tall, 1u);
+    mu_assert("box output missing", got != NULL);
+    /* At width 3 with no word-wrap, the 34-character cell splits into far
+     * more than 5 lines; the default --linelimit (5) must clamp the
+     * rendered rows to top + 5 + bottom = 7 lines. */
+    mu_assert("linelimit did not clamp the wrapped cell to 5 lines", count_lines(got) == 7u);
+    free(got);
+
+    out_free(out);
+    return NULL;
+}
+
 const char *out_suite(void)
 {
     mu_run_test(test_mode_list);
@@ -847,5 +874,6 @@ const char *out_suite(void)
     mu_run_test(test_box_border_locale_fallback);
     mu_run_test(test_no_colour_no_escapes);
     mu_run_test(test_pretty_by_default);
+    mu_run_test(test_linelimit_frees_truncated_lines);
     return NULL;
 }

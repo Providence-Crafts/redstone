@@ -1482,6 +1482,14 @@ static bool columnar_row(Out *o, Str *line, const Border *b, const size_t *width
             return false;
         }
         if (o->linelimit > 0 && nlines[i] > (size_t)o->linelimit) {
+            /* The lines past the limit are never shown, so free them here --
+             * free_lines() below only walks the kept count and would
+             * otherwise leak every wrapped line beyond it. */
+            size_t extra;
+
+            for (extra = (size_t)o->linelimit; extra < nlines[i]; extra++) {
+                free(lines[i][extra]);
+            }
             nlines[i] = (size_t)o->linelimit;
         }
         if (nlines[i] > tallest) {
