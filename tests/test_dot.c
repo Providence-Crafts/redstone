@@ -11,12 +11,14 @@
  * Each test drives a real Shell through shell_feed, which is the same entry
  * point the REPL, `.read` and the init files use.
  */
+#include "comp.h"
 #include "db.h"
 #include "dot.h"
 #include "line.h"
 #include "minunit.h"
 #include "out.h"
 #include "shell.h"
+#include "sqlctx.h"
 #include "suites.h"
 
 #include <stdio.h>
@@ -462,6 +464,33 @@ static const char *test_safe_mode_refuses(void)
     return NULL;
 }
 
+/* Regression: source_arg_kind() used to hand back a non-NULL empty word list
+ * for every dot argument, including A_TABLE ones, so comp.c's "a fixed word
+ * list wins" check always fired and .schema/.tables/.indexes/.dump never
+ * reached the table-name fallback. */
+static const char *test_table_arg_completion(void)
+{
+    Fix f;
+    Db *db;
+    CompList *list;
+    SqlContext ctx;
+    bool ok;
+
+    mu_assert("fixture failed", fix_open(&f));
+    db = shell_db(f.sh);
+    mu_assert("setup failed", db_exec(db, "CREATE TABLE widgets (id INTEGER);", stdout, stderr));
+
+    sql_context(".schema wid", 11u, &ctx);
+    list = comp_generate(db, &ctx, dot_comp_source());
+    ok = comp_count(list) == 1u && strcmp(comp_at(list, 0u)->display, "widgets") == 0 &&
+         comp_at(list, 0u)->kind == COMP_TABLE;
+    comp_free(list);
+    fix_close(&f);
+
+    mu_assert(".schema should suggest table names", ok);
+    return NULL;
+}
+
 const char *dot_suite(void)
 {
     mu_run_test(test_split_quoting);
@@ -477,5 +506,6 @@ const char *dot_suite(void)
     mu_run_test(test_dump_replays);
     mu_run_test(test_lint_fkey_indexes);
     mu_run_test(test_safe_mode_refuses);
+    mu_run_test(test_table_arg_completion);
     return NULL;
 }

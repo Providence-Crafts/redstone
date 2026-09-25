@@ -1162,11 +1162,13 @@ static CompKind source_arg_kind(const char *name, size_t argno, const char *cons
                                 size_t *nwords)
 {
     static const char *const bools[] = {"on", "off"};
-    static const char *const none[] = {NULL};
     const DotCmd *cmd = lookup(name);
     size_t n;
 
-    *words = none;
+    /* NULL means "no fixed word list": comp.c falls through to the returned
+     * kind (a table name, a pragma, ...) instead of treating this as an empty
+     * fixed list and stopping there. */
+    *words = NULL;
     *nwords = 0u;
     if (cmd == NULL || argno != 1u) {
         return COMP_KEYWORD;
