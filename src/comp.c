@@ -385,6 +385,17 @@ static void add_list(Gen *g, const DbList *src, CompKind kind)
 
 /* --- sources ------------------------------------------------------------ */
 
+/* "*" as a select-list item, offered alongside real column names. Not a
+ * keyword and not a column, but closest in spirit to a column: it stands for
+ * "every column", so it sorts and reads with the rest of the column list. */
+static void add_star(Gen *g)
+{
+    if (!has_prefix_fold("*", g->prefix)) {
+        return;
+    }
+    (void)list_take(g->list, dup_str("*"), dup_str("*"), dup_str("all columns"), COMP_COLUMN);
+}
+
 static void add_keywords(Gen *g)
 {
     const DbList *kw = db_keywords(g->db);
@@ -654,6 +665,7 @@ CompList *comp_generate(Db *db, const SqlContext *ctx, const CompDotSource *dots
         add_keywords(&g);
         break;
     case CTX_SELECT_LIST:
+        add_star(&g);
         add_columns(&g, ctx);
         add_list(&g, db_functions(db), COMP_FUNCTION);
         add_keywords(&g);

@@ -512,6 +512,38 @@ static const char *test_other_contexts(void)
     return NULL;
 }
 
+/* "*" is offered right where SELECT expects a column, alongside real columns
+ * and functions, and only there -- it means nothing anywhere else. */
+static const char *test_star_candidate(void)
+{
+    Db *db = open_fixture();
+    CompList *list;
+    bool offered;
+    bool scoped;
+    bool elsewhere;
+
+    mu_assert("open failed", db != NULL);
+    list = complete(db, "SELECT ^ FROM employees", NULL);
+    offered =
+        has(list, "*") && strcmp(text_of(list, "*"), "*") == 0 && find_display(list, "*") == 0;
+    comp_free(list);
+
+    /* A prefix that isn't "*" must not drag it in. */
+    list = complete(db, "SELECT sal^ FROM employees", NULL);
+    scoped = !has(list, "*");
+    comp_free(list);
+
+    list = complete(db, "SELECT * FROM employees WHERE ^", NULL);
+    elsewhere = !has(list, "*");
+    comp_free(list);
+    db_close(db);
+
+    mu_assert("'*' should be offered in a select list", offered);
+    mu_assert("'*' should be filtered out by an unrelated prefix", scoped);
+    mu_assert("'*' should not be offered outside a select list", elsewhere);
+    return NULL;
+}
+
 /* --- the dot-command hook ----------------------------------------------- */
 
 static const char *const g_fake_commands[] = {"schema", "tables", "mode"};
@@ -620,6 +652,7 @@ const char *comp_suite(void)
     mu_run_test(test_value_time_limit);
     mu_run_test(test_cache_invalidation);
     mu_run_test(test_other_contexts);
+    mu_run_test(test_star_candidate);
     mu_run_test(test_dot_source);
     mu_run_test(test_dot_at_statement_start);
     return NULL;
