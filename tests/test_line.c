@@ -577,7 +577,9 @@ static const char *test_pty_completion_scenarios(void)
         return NULL;
     }
     theme_set_colour(false);
-    pty_send(&pty, "SELECT * FROM \templo\r WHERE \tstat\r\r");
+    /* Accepting "employees" (a table) inserts its own trailing space, so the
+     * "WHERE" that follows needs none of its own. */
+    pty_send(&pty, "SELECT * FROM \templo\rWHERE \tstat\r\r");
     line_ok = line_read(pty.line, "> ") == LINE_OK &&
               strcmp(line_text(pty.line), "SELECT * FROM employees WHERE status") == 0;
     pty_capture(&pty, capture, sizeof(capture));
@@ -587,6 +589,50 @@ static const char *test_pty_completion_scenarios(void)
 
     mu_assert("the completed statement is wrong", line_ok);
     mu_assert("no menu was ever drawn", menu_drawn);
+    return NULL;
+}
+
+/* Accepting a keyword, a dot command, or a table/view/alias inserts a
+ * trailing space of its own, since a word almost always follows; a column, a
+ * value, a function and a pragma do not, since punctuation is at least as
+ * likely to follow those as another word. A dot command's own table argument
+ * is the exception to the table/view/alias rule: it is usually the last thing
+ * on the line. */
+static const char *test_pty_completion_trailing_space(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    bool keyword_spaced;
+    bool column_bare;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    /* "sel<TAB>" completes the one matching keyword and gets a space; typing
+     * "*" straight after it would run into the word if the space were
+     * missing. */
+    pty_send(&pty, "sel\t*\r");
+    keyword_spaced =
+        line_read(pty.line, "> ") == LINE_OK && strcmp(line_text(pty.line), "select *") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    db = comp_pty_open(&pty);
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    /* "sal<TAB>" completes the one matching column with no space, so typing
+     * "=" straight after it lands right against the name. */
+    pty_send(&pty, "SELECT * FROM employees WHERE sal\t=1\r");
+    column_bare = line_read(pty.line, "> ") == LINE_OK &&
+                  strcmp(line_text(pty.line), "SELECT * FROM employees WHERE salary=1") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("a completed keyword should get a trailing space", keyword_spaced);
+    mu_assert("a completed column should not get a trailing space", column_bare);
     return NULL;
 }
 
@@ -624,10 +670,13 @@ static const char *test_pty_dot_completion(void)
         return NULL;
     }
     theme_set_colour(false);
-    /* ".t<tab>" has one match, so it is inserted without a menu. The argument
-     * then opens a menu of the two tables starting "ord", which typing "_"
-     * narrows to one by typing the rest of the prefix. */
-    pty_send(&pty, ".t\t ord\ter_\r\r");
+    /* ".t<tab>" has one match, so it is inserted without a menu, with its own
+     * trailing space -- no leading space is typed before "ord". Its table
+     * argument gets no trailing space of its own, since it is normally the
+     * last thing on the line. The argument then opens a menu of the two
+     * tables starting "ord", which typing "_" narrows to one by typing the
+     * rest of the prefix. */
+    pty_send(&pty, ".t\tord\ter_\r\r");
     command = line_read(pty.line, "> ") == LINE_OK;
     argument = strcmp(line_text(pty.line), ".tables order_items") == 0;
     pty_close(&pty);
@@ -652,9 +701,10 @@ static const char *test_pty_unique_draws_no_menu(void)
         return NULL;
     }
     theme_set_colour(false);
+    /* A table name completing FROM gets its own trailing space. */
     pty_send(&pty, "SELECT * FROM order_i\t\r");
     inserted = line_read(pty.line, "> ") == LINE_OK &&
-               strcmp(line_text(pty.line), "SELECT * FROM order_items") == 0;
+               strcmp(line_text(pty.line), "SELECT * FROM order_items ") == 0;
     pty_capture(&pty, capture, sizeof(capture));
     quiet = strstr(capture, "\x1b[0J") == NULL;
     pty_close(&pty);
@@ -694,26 +744,50 @@ static const char *test_pty_escape_dismisses(void)
     return NULL;
 }
 
-/* The menu is a vertical choice: Left and Right must keep moving the cursor
- * while it is open. Ctrl-G closes the menu, and the marker typed afterwards
- * shows where the cursor ended up. */
-static const char *test_pty_arrows_move_cursor_in_menu(void)
+/* While a menu is open, Left/Right must drive the selection (same as
+ * Tab/Shift-Tab) instead of moving the cursor. Ctrl-G discards the selection
+ * and the marker typed afterwards proves the cursor never left the end of
+ * "FROM ". */
+static const char *test_pty_arrows_select_in_menu(void)
 {
     Pty pty;
     Db *db = comp_pty_open(&pty);
-    bool moved;
+    bool cursor_untouched;
 
     if (db == NULL) {
         return NULL;
     }
     theme_set_colour(false);
-    pty_send(&pty, "SELECT * FROM \t\x1b[D\x1b[D\x07X\r");
-    moved =
-        line_read(pty.line, "> ") == LINE_OK && strcmp(line_text(pty.line), "SELECT * FROXM ") == 0;
+    pty_send(&pty, "SELECT * FROM \t\x1b[C\x1b[C\x1b[D\x07X\r");
+    cursor_untouched =
+        line_read(pty.line, "> ") == LINE_OK && strcmp(line_text(pty.line), "SELECT * FROM X") == 0;
     pty_close(&pty);
     db_close(db);
 
-    mu_assert("Left/Right did not move the cursor while the menu was open", moved);
+    mu_assert("Left/Right moved the cursor instead of the menu selection", cursor_untouched);
+    return NULL;
+}
+
+/* Candidates sort as departments, employees, order_items, orders. Two Rights
+ * from the initial selection land on order_items; Enter accepts it. This
+ * proves the arrows are actually wired to menu movement, not merely inert. */
+static const char *test_pty_arrows_cycle_candidates(void)
+{
+    Pty pty;
+    Db *db = comp_pty_open(&pty);
+    bool picked;
+
+    if (db == NULL) {
+        return NULL;
+    }
+    theme_set_colour(false);
+    pty_send(&pty, "SELECT * FROM \t\x1b[C\x1b[C\r\r");
+    picked = line_read(pty.line, "> ") == LINE_OK &&
+             strcmp(line_text(pty.line), "SELECT * FROM order_items ") == 0;
+    pty_close(&pty);
+    db_close(db);
+
+    mu_assert("Right did not step the menu selection to order_items", picked);
     return NULL;
 }
 
@@ -734,7 +808,7 @@ static const char *test_pty_typing_narrows(void)
     theme_set_colour(false);
     pty_send(&pty, "SELECT * FROM \tord\r\r");
     narrowed = line_read(pty.line, "> ") == LINE_OK &&
-               strcmp(line_text(pty.line), "SELECT * FROM order_items") == 0;
+               strcmp(line_text(pty.line), "SELECT * FROM order_items ") == 0;
     pty_close(&pty);
     db_close(db);
 
@@ -889,12 +963,14 @@ const char *line_suite(void)
     mu_run_test(test_sigterm_restores_termios);
     mu_run_test(test_pty_long_line_redraw);
     mu_run_test(test_pty_completion_scenarios);
+    mu_run_test(test_pty_completion_trailing_space);
     mu_run_test(test_pty_select_list_scope);
     mu_run_test(test_pty_dot_completion);
     mu_run_test(test_pty_unique_draws_no_menu);
     mu_run_test(test_pty_escape_dismisses);
     mu_run_test(test_pty_typing_narrows);
-    mu_run_test(test_pty_arrows_move_cursor_in_menu);
+    mu_run_test(test_pty_arrows_select_in_menu);
+    mu_run_test(test_pty_arrows_cycle_candidates);
     mu_run_test(test_pty_highlight);
     mu_run_test(test_pty_no_color);
     mu_run_test(test_history_roundtrip);

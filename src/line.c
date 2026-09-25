@@ -350,14 +350,54 @@ static CompList *candidates(Line *ln)
     return ln->completer.generate(ln->completer.ctx, edit_buffer(ln->edit), edit_cursor(ln->edit));
 }
 
+/* Whether accepting a candidate of this kind should be followed by a space.
+ * True for kinds that name a complete clause element and are almost always
+ * followed by another word (a keyword, a dot command's name, a table/view/
+ * alias naming what FROM or JOIN operates on). False for kinds that are
+ * usually followed by punctuation rather than a word -- a function needs its
+ * "(", a column is as likely to be followed by "," or "." as by a keyword,
+ * a value by an operator or ")", and a pragma by "=" or "(".
+ *
+ * A dot command's own argument is the exception within the exception: a table
+ * name completing ".tables" or ".schema" is normally the last thing on the
+ * line, unlike a table name completing SQL's FROM/JOIN, so it gets no space
+ * of its own there. */
+static bool comp_wants_space(const char *buf, CompKind kind)
+{
+    switch (kind) {
+    case COMP_KEYWORD:
+    case COMP_DOT_COMMAND:
+        return true;
+    case COMP_TABLE:
+    case COMP_VIEW:
+    case COMP_ALIAS:
+        return buf[0] != '.';
+    case COMP_COLUMN:
+    case COMP_VALUE:
+    case COMP_FUNCTION:
+    case COMP_PRAGMA:
+    default:
+        return false;
+    }
+}
+
 /* Overwrite the partial word with the chosen text. The offset comes from the
  * list rather than from a rescan, so the two can never disagree. */
 static void insert_candidate(Line *ln, const CompList *list, const Comp *c)
 {
+    size_t end;
+
     if (list == NULL || c == NULL) {
         return;
     }
     (void)edit_replace_range(ln->edit, comp_offset(list), edit_cursor(ln->edit), c->text);
+    /* Only at the true end of the line: anything already typed past the
+     * cursor is content the user placed there on purpose, and is not ours to
+     * push further away. */
+    end = edit_cursor(ln->edit);
+    if (comp_wants_space(edit_buffer(ln->edit), c->kind) && end == edit_len(ln->edit)) {
+        (void)edit_replace_range(ln->edit, end, end, " ");
+    }
 }
 
 static void close_menu(Line *ln)
