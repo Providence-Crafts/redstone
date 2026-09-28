@@ -35,6 +35,8 @@ struct Edit {
     char seq[EDIT_SEQ_MAX];
     size_t seqlen;
 
+    bool ctrlx_pending; /* saw Ctrl-X, waiting for Ctrl-E */
+
     char **hist;
     size_t hcount;
     size_t hcap;
@@ -394,6 +396,7 @@ void edit_reset(Edit *e)
     e->completing = false;
     e->in_esc = false;
     e->seqlen = 0u;
+    e->ctrlx_pending = false;
     free(e->undo);
     e->undo = NULL;
     free(e->stash);
@@ -642,7 +645,15 @@ static EditAction emacs_key(Edit *e, int key)
 {
     EditAction act;
 
+    if (e->ctrlx_pending) {
+        e->ctrlx_pending = false;
+        return key == CTRL('E') ? EDIT_EXTERNAL_EDIT : EDIT_BELL;
+    }
+
     switch (key) {
+    case CTRL('X'):
+        e->ctrlx_pending = true;
+        return EDIT_NONE;
     case CTRL('C'):
         return EDIT_INTR;
     case CTRL('D'):
@@ -878,6 +889,8 @@ static EditAction vi_normal_key(Edit *e, int key)
         return EDIT_NONE;
     case 'u':
         return undo_restore(e);
+    case 'v':
+        return EDIT_EXTERNAL_EDIT; /* bash vi-mode's convention for the same thing */
     case 'k':
     case K_UP:
         return history_prev(e);

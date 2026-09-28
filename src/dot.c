@@ -377,6 +377,20 @@ static bool cmd_cd(Shell *sh, int argc, char **argv)
     return true;
 }
 
+/* Writes straight to the base stream, ignoring any .output/.once redirect:
+ * clearing the terminal is meaningless aimed at a file. */
+static bool cmd_clear(Shell *sh, int argc, char **argv)
+{
+    (void)argv;
+    if (argc > 1) {
+        usage_error(sh, ".clear");
+        return false;
+    }
+    fputs("\x1b[H\x1b[2J", shell_base_out(sh));
+    (void)fflush(shell_base_out(sh));
+    return true;
+}
+
 static bool cmd_shell(Shell *sh, int argc, char **argv)
 {
     char *text;
@@ -460,6 +474,47 @@ static bool cmd_theme(Shell *sh, int argc, char **argv)
         return ok;
     }
     return theme_load(arg, shell_err(sh));
+}
+
+/* With an argument, edits that text; with none, edits the line before this
+ * one in history (history already holds ".edit" itself by the time a dot
+ * command runs, so index count-2 is "what the user typed last"). Either way
+ * the result is handed to line_seed rather than run, so a mis-edit or a
+ * change of mind is just Ctrl-C away instead of already having executed. */
+static bool cmd_edit(Shell *sh, int argc, char **argv)
+{
+    Line *ln = shell_line(sh);
+    char *joined = NULL;
+    const char *seed;
+    char *edited;
+
+    if (shell_unsafe(sh, argv[0])) {
+        return false;
+    }
+    if (ln == NULL) {
+        return true;
+    }
+    if (argc > 1) {
+        joined = join_args(argc, argv, 1);
+        if (joined == NULL) {
+            return false;
+        }
+        seed = joined;
+    } else {
+        size_t n = line_history_count(ln);
+
+        seed = n > 1u ? line_history_at(ln, n - 2u) : "";
+    }
+
+    edited = line_external_edit(seed, strlen(seed));
+    free(joined);
+    if (edited == NULL) {
+        fprintf(shell_err(sh), "sqlsh: EDITOR failed\n");
+        return false;
+    }
+    line_seed(ln, edited);
+    free(edited);
+    return true;
 }
 
 static bool cmd_editor(Shell *sh, int argc, char **argv)
@@ -938,6 +993,7 @@ REFUSE("ar",    "...",               "Alias for .archive",                      
 {"cd",        cmd_cd,                "DIRECTORY",        "Change the working directory",             NULL, A_FILE},
 {"changes",   cmd_changes,           "on|off",           "Show number of rows changed by SQL",       NULL, A_BOOL},
 REFUSE("check","GLOB",               "Fail if output since .testcase does not match",                "the TCL test harness"),
+{"clear",     cmd_clear,             "",                 "Clear the terminal screen (sqlsh)",        NULL, A_NONE},
 {"clone",     schema_cmd_clone,      "NEWDB",            "Clone data into NEWDB from the existing database", NULL, A_FILE},
 {"connection",cmd_connection,        "?close? ?NUMBER?", "Open or close an auxiliary database connection", NULL, A_NONE},
 {"crlf",      cmd_crlf,              "?on|off?",         "Use \\r\\n line endings on output",        NULL, A_BOOL},
@@ -948,6 +1004,7 @@ REFUSE("check","GLOB",               "Fail if output since .testcase does not ma
 {"dbtotxt",   schema_cmd_dbtotxt,    "",                 "Hex dump of the database file",            NULL, A_NONE},
 {"dump",      schema_cmd_dump,       "?OPTIONS? ?LIKE?", "Render database content as SQL",           NULL, A_TABLE},
 {"echo",      cmd_echo,              "on|off",           "Turn command echo on or off",              NULL, A_BOOL},
+{"edit",      cmd_edit,              "?TEXT?",           "Edit TEXT, or the last line, in $VISUAL/$EDITOR/vi (sqlsh)", NULL, A_NONE},
 {"editor",    cmd_editor,            "emacs|vi",         "Select the line-editor keymap (sqlsh)",    NULL, A_NONE},
 {"eqp",       cmd_eqp,               "on|off|full",      "Enable or disable automatic EXPLAIN QUERY PLAN", NULL, A_BOOL},
 {"excel",     import_cmd_excel,      "?QUERY?",          "Display the output of next command in spreadsheet", NULL, A_NONE},

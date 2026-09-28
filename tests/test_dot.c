@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 /* A session whose two output streams are temporary files, so a test can read
@@ -116,6 +117,36 @@ static void discard(FILE *stream)
 static bool has(const char *text, const char *needle)
 {
     return text != NULL && strstr(text, needle) != NULL;
+}
+
+/* Reads PATH fully into a NUL-terminated buffer the caller frees, or NULL on
+ * any failure. Used to see what .edit's capture-script editor received. */
+static char *read_whole_file(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    long size;
+    char *buf;
+
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0L, SEEK_END) != 0 || (size = ftell(f)) < 0 || fseek(f, 0L, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    buf = malloc((size_t)size + 1u);
+    if (buf == NULL) {
+        fclose(f);
+        return NULL;
+    }
+    if (fread(buf, 1u, (size_t)size, f) != (size_t)size) {
+        free(buf);
+        fclose(f);
+        return NULL;
+    }
+    buf[size] = '\0';
+    fclose(f);
+    return buf;
 }
 
 /* --------------------------------------------------------------------------
@@ -438,6 +469,171 @@ static const char *test_lint_fkey_indexes(void)
 }
 
 /* --------------------------------------------------------------------------
+ * .edit / .clear
+ * ------------------------------------------------------------------------ */
+
+/* Writes a shell script to PATH that copies its $1 argument (the temp file
+ * .edit hands the editor) to CAPTURE, so a test can see what text .edit
+ * actually sent out without needing a real editor. */
+static bool write_capture_editor(const char *path, const char *capture)
+{
+    FILE *f = fopen(path, "w");
+
+    if (f == NULL) {
+        return false;
+    }
+    fprintf(f, "#!/bin/sh\ncp \"$1\" \"%s\"\n", capture);
+    fclose(f);
+    return chmod(path, 0700) == 0;
+}
+
+/* Writes a shell script to PATH that deletes its $1 argument, so the round
+ * trip has no file left to read back. */
+static bool write_delete_editor(const char *path)
+{
+    FILE *f = fopen(path, "w");
+
+    if (f == NULL) {
+        return false;
+    }
+    fputs("#!/bin/sh\nrm -f \"$1\"\n", f);
+    fclose(f);
+    return chmod(path, 0700) == 0;
+}
+
+static const char *test_clear_writes_to_base_out(void)
+{
+    Fix f;
+    char *out;
+    bool ok;
+
+    mu_assert("fixture failed", fix_open(&f));
+    mu_assert(".clear should succeed", shell_feed(f.sh, ".clear"));
+    out = drain(f.out);
+    ok = out != NULL && strcmp(out, "\x1b[H\x1b[2J") == 0;
+    free(out);
+    fix_close(&f);
+
+    mu_assert(".clear should write the clear-screen escape sequence", ok);
+    return NULL;
+}
+
+static const char *test_edit_sends_argument_to_editor(void)
+{
+    char script[] = "/tmp/sqlsh-test-editor-XXXXXX";
+    char capture[] = "/tmp/sqlsh-test-capture-XXXXXX";
+    int sfd = mkstemp(script);
+    int cfd = mkstemp(capture);
+    Fix f;
+    char *got = NULL;
+    bool fed = false;
+
+    if (sfd >= 0) {
+        close(sfd);
+    }
+    if (cfd >= 0) {
+        close(cfd);
+    }
+    mu_assert("setup failed", sfd >= 0 && cfd >= 0 && write_capture_editor(script, capture));
+    unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
+    setenv("EDITOR", script, 1);
+
+    mu_assert("fixture failed", fix_open(&f));
+    fed = shell_feed(f.sh, ".edit SELECT 1;");
+    discard(f.out);
+    discard(f.err);
+    fix_close(&f);
+
+    got = read_whole_file(capture);
+    unlink(script);
+    unlink(capture);
+    unsetenv("EDITOR");
+
+    mu_assert(".edit with an argument should succeed", fed);
+    mu_assert(".edit should hand the argument text to the editor", got != NULL && has(got, "SELECT 1;"));
+    free(got);
+    return NULL;
+}
+
+/* With no argument .edit reaches back into history for "what the user typed
+ * last". In the real REPL, history already holds ".edit" itself by the time
+ * the command runs (shell_run adds every accepted line, including dot
+ * commands, before dispatching), so "previous" means index count-2. shell_feed
+ * alone never touches history, so the test adds both entries itself to
+ * reproduce that shape. */
+static const char *test_edit_falls_back_to_history(void)
+{
+    char script[] = "/tmp/sqlsh-test-editor-XXXXXX";
+    char capture[] = "/tmp/sqlsh-test-capture-XXXXXX";
+    int sfd = mkstemp(script);
+    int cfd = mkstemp(capture);
+    Fix f;
+    char *got = NULL;
+    bool fed = false;
+
+    if (sfd >= 0) {
+        close(sfd);
+    }
+    if (cfd >= 0) {
+        close(cfd);
+    }
+    mu_assert("setup failed", sfd >= 0 && cfd >= 0 && write_capture_editor(script, capture));
+    unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
+    setenv("EDITOR", script, 1);
+
+    mu_assert("fixture failed", fix_open(&f));
+    mu_assert("history setup failed", line_history_add(shell_line(f.sh), "SELECT 2;"));
+    mu_assert("history setup failed", line_history_add(shell_line(f.sh), ".edit"));
+    fed = shell_feed(f.sh, ".edit");
+    discard(f.out);
+    discard(f.err);
+    fix_close(&f);
+
+    got = read_whole_file(capture);
+    unlink(script);
+    unlink(capture);
+    unsetenv("EDITOR");
+
+    mu_assert(".edit with no argument should succeed", fed);
+    mu_assert(".edit should fall back to the previous history entry", got != NULL && has(got, "SELECT 2;"));
+    free(got);
+    return NULL;
+}
+
+/* A nonzero exit from the editor is deliberately not treated as failure (see
+ * the comment on line_external_edit in src/line.c -- upstream's edit() does
+ * not check it either), so the only way to make the round trip fail is an
+ * editor that leaves no file behind for read_file to read back. */
+static const char *test_edit_reports_editor_failure(void)
+{
+    char script[] = "/tmp/sqlsh-test-editor-XXXXXX";
+    int sfd = mkstemp(script);
+    Fix f;
+    char *err;
+    bool fed;
+
+    if (sfd >= 0) {
+        close(sfd);
+    }
+    mu_assert("setup failed", sfd >= 0 && write_delete_editor(script));
+
+    unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
+    setenv("EDITOR", script, 1);
+    mu_assert("fixture failed", fix_open(&f));
+    fed = shell_feed(f.sh, ".edit SELECT 1;");
+    discard(f.out);
+    err = drain(f.err);
+    fix_close(&f);
+    unsetenv("EDITOR");
+    unlink(script);
+
+    mu_assert(".edit should fail when the editor leaves no file behind", !fed);
+    mu_assert("the failure should say why", has(err, "EDITOR"));
+    free(err);
+    return NULL;
+}
+
+/* --------------------------------------------------------------------------
  * Safe mode
  * ------------------------------------------------------------------------ */
 
@@ -446,7 +642,7 @@ static const char *test_lint_fkey_indexes(void)
 static const char *test_safe_mode_refuses(void)
 {
     static const char *const unsafe[] = {".open x.db",    ".shell echo hi",  ".system echo hi",
-                                         ".output f.txt", ".import f.csv t", ".load ext"};
+                                         ".output f.txt", ".import f.csv t", ".load ext", ".edit x"};
     Fix f;
     size_t i;
 
@@ -505,6 +701,10 @@ const char *dot_suite(void)
     mu_run_test(test_tables_and_indexes);
     mu_run_test(test_dump_replays);
     mu_run_test(test_lint_fkey_indexes);
+    mu_run_test(test_clear_writes_to_base_out);
+    mu_run_test(test_edit_sends_argument_to_editor);
+    mu_run_test(test_edit_falls_back_to_history);
+    mu_run_test(test_edit_reports_editor_failure);
     mu_run_test(test_safe_mode_refuses);
     mu_run_test(test_table_arg_completion);
     return NULL;

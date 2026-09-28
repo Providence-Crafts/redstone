@@ -171,6 +171,52 @@ static const char *test_actions(void)
     return NULL;
 }
 
+/* Ctrl-X Ctrl-E is a chord, not two independent bindings: Ctrl-E alone still
+ * means end-of-line, and a Ctrl-X followed by anything else must be
+ * swallowed rather than leak either byte into the buffer or fire the edit. */
+static const char *test_external_edit_chord(void)
+{
+    Edit *ed = edit_new();
+    EditAction chord;
+    EditAction lone_ctrl_e;
+    EditAction stray;
+    bool buf_ok;
+
+    mu_assert("edit_new failed", ed != NULL);
+    feed(ed, "select 1");
+    (void)edit_feed(ed, 0x18); /* Ctrl-X */
+    chord = edit_feed(ed, 0x05); /* Ctrl-E */
+    edit_reset(ed);
+    feed(ed, "x");
+    lone_ctrl_e = edit_feed(ed, 0x05); /* still end-of-line outside the chord */
+    edit_reset(ed);
+    (void)edit_feed(ed, 0x18);
+    stray = edit_feed(ed, 'z'); /* Ctrl-X not followed by Ctrl-E: bell, not 'z' inserted */
+    buf_ok = strcmp(edit_buffer(ed), "") == 0;
+    edit_free(ed);
+
+    mu_assert("Ctrl-X Ctrl-E should request an external edit", chord == EDIT_EXTERNAL_EDIT);
+    mu_assert("Ctrl-E alone should still move to end of line", lone_ctrl_e != EDIT_EXTERNAL_EDIT);
+    mu_assert("Ctrl-X then an unrelated key should bell", stray == EDIT_BELL);
+    mu_assert("the swallowed chord bytes must not reach the buffer", buf_ok);
+    return NULL;
+}
+
+static const char *test_external_edit_vi_v(void)
+{
+    Edit *ed = edit_new();
+    EditAction act;
+
+    mu_assert("edit_new failed", ed != NULL);
+    edit_set_keymap(ed, EDIT_VI);
+    feed_esc(ed, "iselect 1" ESC);
+    act = edit_feed(ed, 'v');
+    edit_free(ed);
+
+    mu_assert("'v' in vi normal mode should request an external edit", act == EDIT_EXTERNAL_EDIT);
+    return NULL;
+}
+
 /* An unrecognised escape sequence must be swallowed whole; the failure this
  * guards against is a stray "[5~" appearing in the SQL. */
 static const char *test_escape_swallowed(void)
@@ -447,6 +493,8 @@ const char *edit_suite(void)
     mu_run_test(test_emacs_edit);
     mu_run_test(test_backspace_repeated);
     mu_run_test(test_actions);
+    mu_run_test(test_external_edit_chord);
+    mu_run_test(test_external_edit_vi_v);
     mu_run_test(test_escape_swallowed);
     mu_run_test(test_history);
     mu_run_test(test_history_cap);

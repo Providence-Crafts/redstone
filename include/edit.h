@@ -22,6 +22,13 @@ typedef enum {
     EDIT_CLEAR,    /* Ctrl-L: clear the screen, then repaint */
     EDIT_BELL,     /* the key means nothing here */
 
+    /* Ctrl-X Ctrl-E (emacs) or `v` in vi normal mode: hand the buffer to
+     * $VISUAL/$EDITOR/vi and load back whatever comes out. The spawn is
+     * line.c's job; this module only recognizes the chord. Kept before the
+     * completion block below so it does not fall inside callers' `act >=
+     * EDIT_COMPLETE` range check. */
+    EDIT_EXTERNAL_EDIT,
+
     /* Completion. EDIT_COMPLETE asks the caller to offer candidates; the rest
      * are only ever returned while completion is active, and say what to do
      * with the open menu. Deciding these here rather than in the menu keeps

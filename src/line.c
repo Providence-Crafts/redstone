@@ -15,6 +15,18 @@
 
 #define LINE_CHUNK 128u
 
+/* strdup is not C99, and the project builds with -std=c99 strictly. */
+static char *dup_str(const char *s)
+{
+    size_t n = strlen(s) + 1u;
+    char *copy = (char *)malloc(n);
+
+    if (copy != NULL) {
+        memcpy(copy, s, n);
+    }
+    return copy;
+}
+
 /* How long to wait for the rest of an escape sequence before concluding the Esc
  * stood alone. Long enough for a terminal to deliver the tail of an arrow key
  * over a slow link, short enough that vi's Esc feels immediate. */
@@ -33,6 +45,7 @@ struct Line {
     unsigned trows;
     char *text; /* the accepted line, owned here */
     size_t tcap;
+    char *seed; /* preloaded into the buffer on the next read, then consumed */
 
     Menu *menu;
     unsigned menu_rows; /* lines the menu occupied at the last redraw */
@@ -178,7 +191,17 @@ void line_free(Line *ln)
     edit_free(ln->edit);
     menu_free(ln->menu);
     free(ln->text);
+    free(ln->seed);
     free(ln);
+}
+
+void line_seed(Line *ln, const char *text)
+{
+    if (ln == NULL) {
+        return;
+    }
+    free(ln->seed);
+    ln->seed = text != NULL ? dup_str(text) : NULL;
 }
 
 bool line_interactive(const Line *ln)
@@ -233,6 +256,16 @@ void line_set_completer(Line *ln, const LineCompleter *completer)
 bool line_history_add(Line *ln, const char *text)
 {
     return ln != NULL && edit_history_add(ln->edit, text);
+}
+
+size_t line_history_count(const Line *ln)
+{
+    return ln != NULL ? edit_history_count(ln->edit) : 0u;
+}
+
+const char *line_history_at(const Line *ln, size_t i)
+{
+    return ln != NULL ? edit_history_at(ln->edit, i) : NULL;
 }
 
 const char *line_text(const Line *ln)
@@ -539,6 +572,131 @@ static LineStatus read_plain(Line *ln)
     return LINE_OK;
 }
 
+/* ------------------------------------------------------------------------
+ * External editor
+ *
+ * Ctrl-X Ctrl-E or `v` (vi normal mode) hands the buffer to $VISUAL/$EDITOR
+ * and loads back whatever comes out, the same convention bash and upstream
+ * sqlite3(1)'s edit() SQL function use. edit.c only recognizes the chord; the
+ * spawn happens here because edit.c performs no I/O.
+ * ---------------------------------------------------------------------- */
+
+static const char *editor_command(void)
+{
+    const char *cmd = getenv("VISUAL");
+
+    if (cmd == NULL || cmd[0] == '\0') {
+        cmd = getenv("EDITOR");
+    }
+    if (cmd == NULL || cmd[0] == '\0') {
+        cmd = "vi";
+    }
+    return cmd;
+}
+
+static bool write_file(const char *path, const char *buf, size_t len)
+{
+    FILE *fp = fopen(path, "w");
+    bool ok;
+
+    if (fp == NULL) {
+        return false;
+    }
+    ok = fwrite(buf, 1u, len, fp) == len;
+    return fclose(fp) == 0 && ok;
+}
+
+/* Caller frees. NULL on any failure, including an empty result -- an editor
+ * that produced nothing is treated the same as one that failed to run. */
+static char *read_file(const char *path)
+{
+    FILE *fp = fopen(path, "rb");
+    long sz;
+    char *buf;
+
+    if (fp == NULL) {
+        return NULL;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0 || (sz = ftell(fp)) < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        (void)fclose(fp);
+        return NULL;
+    }
+    buf = (char *)malloc((size_t)sz + 1u);
+    if (buf == NULL || fread(buf, 1u, (size_t)sz, fp) != (size_t)sz) {
+        free(buf);
+        (void)fclose(fp);
+        return NULL;
+    }
+    buf[sz] = '\0';
+    (void)fclose(fp);
+    return buf;
+}
+
+/* Write TEXT to a temp file, run $VISUAL/$EDITOR/vi on it, and return what
+ * came back, or NULL on any failure (a missing temp directory, an editor
+ * that exits non-zero is not checked here since upstream's edit() does not
+ * either -- what matters is whether a file came back readable). Caller
+ * frees. Shared by the Ctrl-X Ctrl-E chord below and `.edit`, which runs
+ * with the terminal already out of raw mode and so needs none of that
+ * suspend/restore dance. */
+char *line_external_edit(const char *text, size_t len)
+{
+    const char *tmpdir = getenv("TMPDIR");
+    char path[1024];
+    int fd;
+    char *cmd;
+    char *result;
+    size_t need;
+
+    if (tmpdir == NULL || tmpdir[0] == '\0') {
+        tmpdir = "/tmp";
+    }
+    if ((size_t)snprintf(path, sizeof(path), "%s/sqlsh-edit-XXXXXX", tmpdir) >= sizeof(path)) {
+        return NULL;
+    }
+    fd = mkstemp(path);
+    if (fd < 0) {
+        return NULL;
+    }
+    (void)close(fd);
+    if (!write_file(path, text, len)) {
+        (void)unlink(path);
+        return NULL;
+    }
+
+    need = strlen(editor_command()) + strlen(path) + 4u;
+    cmd = (char *)malloc(need);
+    if (cmd != NULL && (size_t)snprintf(cmd, need, "%s \"%s\"", editor_command(), path) < need) {
+        (void)system(cmd);
+    }
+    free(cmd);
+
+    result = read_file(path);
+    (void)unlink(path);
+    return result;
+}
+
+/* Suspends raw mode around the child so the editor gets a normal terminal,
+ * then restores it and loads whatever the editor left behind back into the
+ * buffer. Any failure along the way leaves the buffer untouched. */
+static void run_external_edit(Line *ln)
+{
+    char *text;
+
+    raw_off(ln);
+    fputs("\r\n", ln->out);
+    (void)fflush(ln->out);
+
+    text = line_external_edit(edit_buffer(ln->edit), edit_len(ln->edit));
+
+    (void)raw_on(ln);
+
+    if (text != NULL) {
+        (void)edit_set_buffer(ln->edit, text);
+        free(text);
+    }
+}
+
 /* Translate one editor action into screen output. Returns the terminating
  * status, or LINE_OK with *done false to keep reading. */
 static LineStatus apply(Line *ln, EditAction act, const char *prompt, bool *done)
@@ -548,6 +706,10 @@ static LineStatus apply(Line *ln, EditAction act, const char *prompt, bool *done
         return apply_completion(ln, act, prompt);
     }
     switch (act) {
+    case EDIT_EXTERNAL_EDIT:
+        run_external_edit(ln);
+        refresh(ln, prompt);
+        return LINE_OK;
     case EDIT_REDRAW:
         if (edit_is_completing(ln->edit)) {
             narrow(ln);
@@ -606,6 +768,11 @@ static LineStatus read_raw(Line *ln, const char *prompt)
     LineStatus st = LINE_OK;
 
     edit_reset(ln->edit);
+    if (ln->seed != NULL) {
+        (void)edit_set_buffer(ln->edit, ln->seed);
+        free(ln->seed);
+        ln->seed = NULL;
+    }
     refresh(ln, prompt);
 
     while (!done) {

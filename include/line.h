@@ -46,6 +46,22 @@ EditKeymap line_keymap(const Line *ln);
 
 bool line_history_add(Line *ln, const char *text);
 
+/* Preload TEXT into the buffer of the next line_read call, then discard it.
+ * NULL clears a pending seed. What `.edit` uses to hand back an edited line
+ * for the user to look over rather than executing it unseen. */
+void line_seed(Line *ln, const char *text);
+
+/* Read access to the history ring, for `.edit` to find "the previous line"
+ * when it is given no text of its own to edit. */
+size_t line_history_count(const Line *ln);
+const char *line_history_at(const Line *ln, size_t i); /* NULL when out of range */
+
+/* Run $VISUAL/$EDITOR/vi on TEXT (LEN bytes) and return what came back, or
+ * NULL on failure; caller frees. Does not touch raw mode -- the caller is
+ * expected to already be outside it (as `.edit` is) or to suspend it itself
+ * (as the Ctrl-X Ctrl-E chord does). */
+char *line_external_edit(const char *text, size_t len);
+
 /* The completion hook. `generate` produces the candidates for TEXT with the
  * cursor at CURSOR and the line layer takes ownership of the list; NULL means
  * there is nothing to offer. Passing a generator in rather than calling comp.c
