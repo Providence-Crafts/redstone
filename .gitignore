@@ -16,3 +16,7 @@ test.db
 
 # clangd index, written by the editor.
 /.cache/
+
+PROJECT.md
+docs/logos/
+feature-fix.md
