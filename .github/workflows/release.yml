@@ -1,0 +1,64 @@
+name: release
+
+# Pushing a tag vX.Y.Z builds both platforms and publishes a GitHub release with
+# redstone-X.Y.Z-linux-x86_64.tar.gz and redstone-X.Y.Z-windows-x86_64.zip.
+# The winget manifest under packaging/winget/ is then updated from the zip's
+# SHA256 (see packaging/winget/README.md).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  SQLITE_ZIP: https://sqlite.org/2026/sqlite-amalgamation-3530300.zip
+  SQLITE_DIR: sqlite-amalgamation-3530300
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04 # older glibc, so the binary runs on more distributions
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -fsSLo sqlite.zip "$SQLITE_ZIP" && unzip -q sqlite.zip
+          make CC=gcc SQLITE=vendored SQLITE_AMALGAMATION="$PWD/$SQLITE_DIR" release
+          v="${GITHUB_REF_NAME#v}"; d="redstone-$v-linux-x86_64"
+          mkdir "$d" && cp bin/redstone docs/redstone.1 README.md "$d/"
+          if [ -f LICENSE ]; then cp LICENSE "$d/"; fi
+          tar czf "$d.tar.gz" "$d"
+      - uses: actions/upload-artifact@v4
+        with: { name: linux, path: '*.tar.gz' }
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: make unzip zip curl mingw-w64-ucrt-x86_64-gcc
+      - run: |
+          curl -fsSLo sqlite.zip "$SQLITE_ZIP" && unzip -q sqlite.zip
+          make CC=gcc SQLITE=vendored SQLITE_AMALGAMATION="$PWD/$SQLITE_DIR" release
+          v="${GITHUB_REF_NAME#v}"; d="redstone-$v-windows-x86_64"
+          mkdir "$d" && cp bin/redstone.exe docs/redstone.1 README.md "$d/"
+          if [ -f LICENSE ]; then cp LICENSE "$d/"; fi
+          zip -qr "$d.zip" "$d"
+          sha256sum "$d.zip"
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: '*.zip' }
+
+  publish:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { merge-multiple: true }
+      - run: sha256sum *.tar.gz *.zip > SHA256SUMS
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes *.tar.gz *.zip SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}

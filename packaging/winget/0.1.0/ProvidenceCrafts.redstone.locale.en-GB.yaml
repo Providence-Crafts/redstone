@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: ProvidenceCrafts.redstone
+PackageVersion: 0.1.0
+PackageLocale: en-GB
+Publisher: Providence Crafts
+PublisherUrl: https://github.com/Providence-Crafts
+PackageName: redstone
+PackageUrl: https://github.com/Providence-Crafts/redstone
+License: GPL-3.0-or-later
+LicenseUrl: https://github.com/Providence-Crafts/redstone/blob/main/LICENSE
+ShortDescription: A drop-in replacement for sqlite3 with completion, live highlighting and themed output.
+Description: |-
+  redstone is a SQLite shell. With --compat it reproduces sqlite3(1) byte for byte;
+  without it, it adds a zsh-style completion menu, syntax highlighting as you type,
+  and box-drawn, coloured, terminal-width-aware output.
+Moniker: redstone
+Tags:
+  - sqlite
+  - sql
+  - database
+  - shell
+  - cli
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

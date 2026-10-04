@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The full gate, in the same pinned Nix shell as local development.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix develop --command make gate
+
+  # Native MinGW-w64 build on Windows: static exe with the vendored amalgamation,
+  # then the unit tests. The amalgamation version tracks flake.nix.
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            make unzip curl
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-sqlite3
+      - name: Fetch the SQLite amalgamation
+        run: |
+          curl -fsSLo sqlite.zip https://sqlite.org/2026/sqlite-amalgamation-3530300.zip
+          unzip -q sqlite.zip
+          echo "SQLITE_AMALGAMATION=$PWD/sqlite-amalgamation-3530300" >> "$GITHUB_ENV"
+      - run: make CC=gcc SQLITE=vendored WARNINGS_AS_ERRORS=1 release
+      - run: make CC=gcc SQLITE=vendored MODE=release WARNINGS_AS_ERRORS=1 run-tests
+      - run: ./bin/redstone.exe --version
