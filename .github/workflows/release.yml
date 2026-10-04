@@ -28,7 +28,7 @@ jobs:
           if [ -f LICENSE ]; then cp LICENSE "$d/"; fi
           tar czf "$d.tar.gz" "$d"
       - uses: actions/upload-artifact@v4
-        with: { name: linux, path: '*.tar.gz' }
+        with: { name: linux, path: 'redstone-*.tar.gz' }
 
   windows:
     runs-on: windows-latest
@@ -50,7 +50,7 @@ jobs:
           zip -qr "$d.zip" "$d"
           sha256sum "$d.zip"
       - uses: actions/upload-artifact@v4
-        with: { name: windows, path: '*.zip' }
+        with: { name: windows, path: 'redstone-*.zip' }
 
   publish:
     needs: [linux, windows]
@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { merge-multiple: true }
-      - run: sha256sum *.tar.gz *.zip > SHA256SUMS
-      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes *.tar.gz *.zip SHA256SUMS
+      - run: sha256sum redstone-* > SHA256SUMS
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes redstone-* SHA256SUMS
         env:
           GH_TOKEN: ${{ github.token }}
