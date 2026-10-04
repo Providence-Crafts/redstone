@@ -1059,7 +1059,7 @@ prepare the repository for publication: CI, release archives, winget, demo.
 - [x] `make gate` -> PASS (162 tests, 138 parity checks)
 - [x] Windows cross-build with `-Werror`; 142 tests pass under Wine (the
       `.edit` tests need a `/bin/sh` editor stub and are POSIX-only)
-- [ ] CI green on GitHub for both jobs (first push)
+- [x] CI green on GitHub for both jobs (run 37240885649)
 
 *Manual*
 
