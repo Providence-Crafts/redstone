@@ -1,17 +1,17 @@
 /*
  * width.h - display width of UTF-8 text.
  *
- * Every aligned output in sqlsh -- the completion menu, the columnar output
+ * Every aligned output in redstone -- the completion menu, the columnar output
  * modes -- needs to know how many terminal cells a string occupies, which is
  * not its byte count and not its character count: combining marks take none
  * and CJK ideographs take two.
  *
- * The estimate has to agree with sqlite3(1)'s, or `sqlsh --compat` would
+ * The estimate has to agree with sqlite3(1)'s, or `redstone --compat` would
  * misalign exactly where upstream does not, so the table in width.c is
  * upstream's own. It is data, not a dependency: see the note there.
  */
-#ifndef SQLSH_WIDTH_H
-#define SQLSH_WIDTH_H
+#ifndef REDSTONE_WIDTH_H
+#define REDSTONE_WIDTH_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -41,4 +41,4 @@ size_t width_vt100(const char *s);
  * two cells wide is left out rather than half printed. */
 size_t width_fit(const char *s, size_t max);
 
-#endif /* SQLSH_WIDTH_H */
+#endif /* REDSTONE_WIDTH_H */

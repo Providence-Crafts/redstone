@@ -804,7 +804,7 @@ static const char *test_no_colour_no_escapes(void)
     return NULL;
 }
 
-/* out_new with nothing configured is sqlsh's own default, not upstream's:
+/* out_new with nothing configured is redstone's own default, not upstream's:
  * box mode with headers on, not list mode with headers off. A regression to
  * upstream's defaults must fail this test. */
 static const char *test_pretty_by_default(void)

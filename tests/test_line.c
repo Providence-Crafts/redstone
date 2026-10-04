@@ -224,7 +224,7 @@ static const char *test_pty_editing(void)
     (void)pty_set_raw(&pty);
     /* Type "selct", back up two and insert the missing letter, then Enter. */
     pty_send(&pty, "selct\x1b[D\x1b[De\r");
-    st = line_read(pty.line, "sqlsh> ");
+    st = line_read(pty.line, "redstone> ");
     edited = st == LINE_OK && strcmp(line_text(pty.line), "select") == 0;
     pty_close(&pty);
 
@@ -283,7 +283,7 @@ static const char *test_pty_restores_termios(void)
     return NULL;
 }
 
-/* A pipe must get no escape bytes at all: a redirected sqlsh has to produce the
+/* A pipe must get no escape bytes at all: a redirected redstone has to produce the
  * same stream sqlite3(1) would. */
 static const char *test_plain_emits_no_escapes(void)
 {
@@ -294,7 +294,7 @@ static const char *test_plain_emits_no_escapes(void)
     bool ok;
 
     if (ln != NULL) {
-        (void)line_read(ln, "sqlsh> ");
+        (void)line_read(ln, "redstone> ");
         (void)fflush(out);
         written = ftell(out);
     }
@@ -444,7 +444,7 @@ static const char *test_pty_long_line_redraw(void)
     }
     /* Ctrl-A (start of line), insert Y, Enter. */
     pty_send(&pty, "\x01Y\r");
-    st = line_read(pty.line, "sqlsh> ");
+    st = line_read(pty.line, "redstone> ");
     expect[0] = 'Y';
     memset(expect + 1, 'x', 40);
     expect[41] = '\0';
@@ -940,11 +940,11 @@ static const char *test_history_path(void)
     char *path;
     bool ok;
 
-    if (setenv("XDG_STATE_HOME", "/tmp/sqlsh-state", 1) != 0) {
+    if (setenv("XDG_STATE_HOME", "/tmp/redstone-state", 1) != 0) {
         return NULL;
     }
     path = line_history_path();
-    ok = path != NULL && strcmp(path, "/tmp/sqlsh-state/sqlsh/history") == 0;
+    ok = path != NULL && strcmp(path, "/tmp/redstone-state/redstone/history") == 0;
     free(path);
     (void)unsetenv("XDG_STATE_HOME");
 

@@ -10,8 +10,8 @@
  * produces; the split means candidate generation is testable against a fixture
  * database with no pty in sight.
  */
-#ifndef SQLSH_COMP_H
-#define SQLSH_COMP_H
+#ifndef REDSTONE_COMP_H
+#define REDSTONE_COMP_H
 
 #include "db.h"
 #include "sqlctx.h"
@@ -80,4 +80,4 @@ size_t comp_offset(const CompList *list);
 /* Group heading for the menu. */
 const char *comp_kind_label(CompKind kind);
 
-#endif /* SQLSH_COMP_H */
+#endif /* REDSTONE_COMP_H */

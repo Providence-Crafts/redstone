@@ -6,8 +6,8 @@
  * When the input is not a tty it degrades to plain reads, so pipes and here
  * documents behave exactly as they did before line editing existed.
  */
-#ifndef SQLSH_LINE_H
-#define SQLSH_LINE_H
+#ifndef REDSTONE_LINE_H
+#define REDSTONE_LINE_H
 
 #include "comp.h"
 #include "edit.h"
@@ -83,7 +83,7 @@ void line_set_highlighter(Line *ln, const HlSchema *schema);
  * the prompt. Always EDIT_VI_INSERT under the emacs keymap. */
 EditViState line_vi_state(const Line *ln);
 
-/* Default path: $XDG_STATE_HOME/sqlsh/history, else ~/.local/state/sqlsh/
+/* Default path: $XDG_STATE_HOME/redstone/history, else ~/.local/state/redstone/
  * history. Returns NULL when neither XDG_STATE_HOME nor HOME is set. The
  * caller frees. */
 char *line_history_path(void);
@@ -93,4 +93,4 @@ char *line_history_path(void);
 bool line_history_load(Line *ln, const char *path);
 bool line_history_save(const Line *ln, const char *path);
 
-#endif /* SQLSH_LINE_H */
+#endif /* REDSTONE_LINE_H */

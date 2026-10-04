@@ -1,16 +1,16 @@
-# sqlsh
+# redstone
 
 A drop-in replacement for `sqlite3(1)` with zsh-style completion, live syntax
 highlighting, a colour theme system, and output worth looking at.
 
-`sqlsh --compat` reproduces `sqlite3(1)` exactly — same dot commands, same
+`redstone --compat` reproduces `sqlite3(1)` exactly — same dot commands, same
 output modes, same command-line flags — verified byte-for-byte by a
-differential test suite against the real binary. Outside `--compat`, sqlsh
+differential test suite against the real binary. Outside `--compat`, redstone
 adds a navigable completion menu (`<Tab>` for tables, columns, dot commands,
 values), highlighting of the statement as you type, and box-drawn, coloured,
 terminal-width-aware output by default.
 
-See `man sqlsh` (`docs/sqlsh.1`) for the full reference: every flag, every
+See `man redstone` (`docs/redstone.1`) for the full reference: every flag, every
 output mode, file locations, environment variables and exit status. This file
 is the tour.
 
@@ -21,13 +21,13 @@ Everything happens inside the pinned Nix flake — no system dependency beyond
 
 ```sh
 nix develop            # enter the dev shell once, then run make from inside it
-make                    # debug build -> bin/sqlsh
+make                    # debug build -> bin/redstone
 make release            # optimised build
 make SQLITE=vendored    # build against the sqlite amalgamation instead of the system library
 make test               # unit + pty tests under ASan+UBSan
 make parity             # differential output test vs the real sqlite3(1)
 make gate               # format, both builds, tests, parity, cppcheck, clang-tidy -> PASS
-make install PREFIX=~/.local   # installs bin/sqlsh and the man page only, never as/symlinked to sqlite3
+make install PREFIX=~/.local   # installs bin/redstone and the man page only, never as/symlinked to sqlite3
 ```
 
 `make help` lists every target, including `valgrind`, `fuzz`, `tidy`,
@@ -39,12 +39,12 @@ same release binary.
 ## Usage
 
 ```sh
-sqlsh mydb.db                              # interactive, completion + highlighting + box output
-sqlsh --compat mydb.db "SELECT * FROM t;"  # scripting, byte-identical to sqlite3(1)
-alias sqlite3=sqlsh                        # meant to survive a normal day's work
+redstone mydb.db                              # interactive, completion + highlighting + box output
+redstone --compat mydb.db "SELECT * FROM t;"  # scripting, byte-identical to sqlite3(1)
+alias sqlite3=redstone                        # meant to survive a normal day's work
 ```
 
-With no database argument, sqlsh opens an in-memory database, exactly as
+With no database argument, redstone opens an in-memory database, exactly as
 `sqlite3(1)` does. Any SQL given after the database name on the command line
 runs as a batch and the shell exits; with none, it opens the interactive
 prompt, or reads statements from standard input when that is not a terminal.
@@ -107,7 +107,7 @@ is byte-parity-tested against `sqlite3(1)`; the rest
 `.help mode` for the option flags each one accepts.
 
 Colours come from `theme.c`'s theme file
-(`$XDG_CONFIG_HOME/sqlsh/theme`, default `~/.config/sqlsh/theme`), an INI file
+(`$XDG_CONFIG_HOME/redstone/theme`, default `~/.config/redstone/theme`), an INI file
 with `[menu]`, `[syntax]` and `[output]` sections. `.theme` with no argument
 prints the active palette in that same loadable format; `.theme dark|light|
 basic|no-color` or a file path loads another one. `NO_COLOR` and `TERM=dumb`
@@ -115,10 +115,10 @@ turn colour and highlighting off regardless.
 
 ## Parity
 
-`sqlsh --compat` targets byte-identical behaviour with the linked
+`redstone --compat` targets byte-identical behaviour with the linked
 `sqlite3(1)` for every flag, dot command and classic output mode; the gate's
 differential suite (`make parity`) is what backs that claim rather than
-asserting it. Where sqlsh knowingly differs — an extension this build does not
+asserting it. Where redstone knowingly differs — an extension this build does not
 vendor, a mode the shipped binary itself rejects, and similar — the gap is
 refused loudly (an error naming what's missing) rather than approximated
 silently. `docs/notes/` and `PROJECT.md`'s "Known gaps" tables carry the

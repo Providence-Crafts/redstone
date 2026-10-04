@@ -1,13 +1,13 @@
-.TH SQLSH 1 "2026" "sqlsh 0.1.0" "User Commands"
+.TH REDSTONE 1 "2026" "redstone 0.1.0" "User Commands"
 .SH NAME
-sqlsh \- a SQLite shell with zsh-style completion, drop-in for sqlite3(1)
+redstone \- a SQLite shell with zsh-style completion, drop-in for sqlite3(1)
 .SH SYNOPSIS
-.B sqlsh
+.B redstone
 .RI [ options ]
 .RI [ database ]
 .RI [ sql\ ... ]
 .SH DESCRIPTION
-.B sqlsh
+.B redstone
 is an interactive and batch SQL shell for SQLite, built to be run wherever
 .BR sqlite3 (1)
 is run today.
@@ -17,11 +17,11 @@ accepts is either implemented to the same behaviour or refused with an
 explicit message, never silently ignored (see
 .B PARITY
 below); an
-.B alias sqlite3=sqlsh
+.B alias sqlite3=redstone
 is meant to survive a normal day's work.
 .PP
 On top of that baseline,
-.B sqlsh
+.B redstone
 adds a zsh-style completion menu (table, column and dot-command names,
 narrowed as you type and browsed with the arrow keys or Tab), live
 syntax highlighting of the statement being typed, a colour theme system,
@@ -43,7 +43,7 @@ argument, an in-memory database is used, exactly as in
 Any
 .I sql
 arguments after the database name are executed as a batch, after which
-.B sqlsh
+.B redstone
 exits; with none, it opens the interactive prompt (or reads statements
 from standard input, if that is not a terminal).
 .SH OPTIONS
@@ -52,7 +52,7 @@ from standard input, if that is not a terminal).
 Show a short usage summary and exit.
 .TP
 .BR \-v ", " \-\-version
-Print the sqlsh and linked SQLite version and exit.
+Print the redstone and linked SQLite version and exit.
 .TP
 .B \-\-compat
 Format results exactly as
@@ -77,7 +77,7 @@ itself does not accept as a command-line flag either.)
 .TP
 .BI \-init " FILE"
 Read \fIFILE\fR instead of the default init files
-(\fB~/.sqliterc\fR and the sqlsh-specific \fBsqlshrc\fR, see
+(\fB~/.sqliterc\fR and the redstone-specific \fBredstonerc\fR, see
 .B FILES
 below).
 .TP
@@ -181,7 +181,7 @@ Toggle column headers.
 .BI \.width " N N ..."
 Set fixed per-column widths.
 .PP
-Two commands are sqlsh-specific, not part of
+Two commands are redstone-specific, not part of
 .BR sqlite3 (1):
 .TP
 .B .theme \fR[\fINAME\fR|\fIFILE\fR]
@@ -198,7 +198,7 @@ does not vendor
 are recognised and refused with a message naming what they need, rather
 than being silently accepted and doing nothing.
 .SH PARITY
-.B sqlsh \-\-compat
+.B redstone \-\-compat
 is meant to be indistinguishable from
 .BR sqlite3 (1)
 for scripting: same flags, same dot commands, same byte output. Where it
@@ -206,7 +206,7 @@ knowingly is not \(em an extension SQLite build this binary lacks, a mode
 the shipped
 .BR sqlite3 (1)
 binary itself rejects, and similar \(em the difference is refused loudly
-rather than silently approximated. Outside \fB\-\-compat\fR, sqlsh is
+rather than silently approximated. Outside \fB\-\-compat\fR, redstone is
 intentionally not upstream: prettier output, a completion menu, and
 highlighting are the reason to run it instead.
 .SH FILES
@@ -216,12 +216,12 @@ Read at startup unless \fB\-init\fR, \fB\-noinit\fR or \fB\-cmd\fR redirect
 it; for parity with
 .BR sqlite3 (1).
 .TP
-.B $XDG_CONFIG_HOME/sqlsh/sqlshrc \fR(or \fB~/.config/sqlsh/sqlshrc\fR)
+.B $XDG_CONFIG_HOME/redstone/redstonerc \fR(or \fB~/.config/redstone/redstonerc\fR)
 Read after \fB~/.sqliterc\fR, so a setting here wins over the same setting
-there. sqlsh-specific: not read by
+there. redstone-specific: not read by
 .BR sqlite3 (1).
 .TP
-.B $XDG_CONFIG_HOME/sqlsh/theme \fR(or \fB~/.config/sqlsh/theme\fR)
+.B $XDG_CONFIG_HOME/redstone/theme \fR(or \fB~/.config/redstone/theme\fR)
 The colour theme file, in the format \fB.theme\fR with no argument
 prints. Also suppressed by \fB\-noinit\fR.
 .SH ENVIRONMENT
@@ -236,7 +236,7 @@ instead); a non-tty output stream disables colour regardless of
 .BR TERM .
 .TP
 .B XDG_CONFIG_HOME
-Base directory for \fBsqlshrc\fR and the theme file; see
+Base directory for \fBredstonerc\fR and the theme file; see
 .B FILES
 above.
 .SH EXIT STATUS
@@ -250,16 +250,16 @@ on a SQL error with \fB\-bail\fR or in the default non-interactive
 on a command-line usage error (unknown or malformed option).
 .SH EXAMPLES
 .TP
-.B sqlsh mydb.db
+.B redstone mydb.db
 Open \fBmydb.db\fR interactively with completion, highlighting and box
 output.
 .TP
-.B sqlsh --compat mydb.db "SELECT * FROM t;" > out.txt
+.B redstone --compat mydb.db "SELECT * FROM t;" > out.txt
 Run one query in a script exactly as
 .BR sqlite3 (1)
 would.
 .TP
-.B sqlsh -box -screenwidth 100 mydb.db
+.B redstone -box -screenwidth 100 mydb.db
 Force box output shrunk to fit a 100-column terminal regardless of the
 real one, e.g. when piping into a fixed-width report.
 .SH SEE ALSO

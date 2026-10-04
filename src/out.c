@@ -15,7 +15,7 @@
 #define OUT_DFLT_LINE_LIMIT 5
 #define OUT_DFLT_TITLE_LIMIT 20
 /* One INSERT per row. Trunk batches rows up to 3000 characters, but the
- * 3.53.3 binary sqlsh is measured against does not, and .dump output is
+ * 3.53.3 binary redstone is measured against does not, and .dump output is
  * compared byte for byte often enough that the difference matters.
  * "--multiinsert N" still asks for batching explicitly. */
 #define OUT_DFLT_MULTI_INSERT 0u

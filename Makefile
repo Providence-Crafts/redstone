@@ -1,5 +1,5 @@
 # ==============================================================================
-# sqlsh - minimal SQLite shell with zsh-style completion
+# redstone - minimal SQLite shell with zsh-style completion
 # Derived from ~/computation/programming/c/template, adapted for C99 + sqlite3.
 # ==============================================================================
 
@@ -10,7 +10,7 @@ ifeq ($(origin CC),default)
 endif
 STD = -std=c99
 
-TARGET_NAME = sqlsh
+TARGET_NAME = redstone
 BIN_DIR   = bin
 SRC_DIR   = src
 INC_DIR   = include
@@ -148,7 +148,7 @@ release debug asan msan:
 
 binary: $(BIN_DIR)/$(TARGET_NAME)
 
-# The binary is built per mode and copied to bin/, so bin/sqlsh always reflects
+# The binary is built per mode and copied to bin/, so bin/redstone always reflects
 # the mode that was built last rather than whichever object happened to be new.
 $(BIN_DIR)/$(TARGET_NAME): $(BUILD_DIR)/$(TARGET_NAME) | $(BIN_DIR)
 	cp -f $< $@
@@ -287,7 +287,7 @@ build:
 #   checkersReport            - which checkers ran.
 #   toomanyconfigs            - the #ifdef space of sqlite3.h, not of src/.
 #   unusedFunction            - false on a two-binary build: the test runner
-#                               and sqlsh each use a different part of db.c.
+#                               and redstone each use a different part of db.c.
 #   missingIncludeSystem      - system headers are the compiler's business.
 # --check-level=exhaustive removes normalCheckLevelMaxBranches by actually
 # analysing every branch; affordable on a codebase this size.
@@ -352,7 +352,7 @@ watch:
 
 install: release
 	install -Dm755 $(BIN_DIR)/$(TARGET_NAME) $(DESTDIR)$(PREFIX)/bin/$(TARGET_NAME)
-	install -Dm644 docs/sqlsh.1 $(DESTDIR)$(PREFIX)/share/man/man1/sqlsh.1
+	install -Dm644 docs/redstone.1 $(DESTDIR)$(PREFIX)/share/man/man1/redstone.1
 
 $(BIN_DIR) $(BUILD_DIR) $(BUILD_DIR)/tests $(BUILD_DIR)/vendor:
 	mkdir -p $@
@@ -361,7 +361,7 @@ clean:
 	rm -rf build $(BIN_DIR) compile_commands.json
 
 help:
-	@echo "sqlsh"
+	@echo "redstone"
 	@echo "  make / make debug     debug build (default)"
 	@echo "  make release          optimised build"
 	@echo "  make asan             AddressSanitizer + UBSan"

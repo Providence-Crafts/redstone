@@ -1,5 +1,5 @@
 /*
- * sqlsh - a minimal SQLite shell with zsh-style completion.
+ * redstone - a minimal SQLite shell with zsh-style completion.
  *
  * Nothing but the command line lives here. Everything the session does --
  * dot commands, redirects, init files, the REPL -- belongs to shell.c, so
@@ -21,7 +21,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SQLSH_VERSION "0.1.0"
+#define REDSTONE_VERSION "0.1.0"
 
 static CompList *complete_for(void *ctx, const char *text, size_t cursor)
 {
@@ -119,7 +119,7 @@ static bool hl_is_column(void *ctx, const char *name, size_t len, const SqlCtxTa
 
 static void usage(FILE *out)
 {
-    fputs("usage: sqlsh [options] [database] [sql...]\n"
+    fputs("usage: redstone [options] [database] [sql...]\n"
           "\n"
           "  -h, --help          show this message\n"
           "  -v, --version       show version\n"
@@ -135,7 +135,7 @@ static void usage(FILE *out)
           "  -screenwidth N, -sw N\n"
           "\n"
           "With no database, an in-memory one is used.\n"
-          "Any SQL arguments are executed, after which sqlsh exits.\n",
+          "Any SQL arguments are executed, after which redstone exits.\n",
           out);
 }
 
@@ -189,7 +189,7 @@ static bool option_takes_value(const char *arg)
     return false;
 }
 
-/* Options sqlsh recognises but cannot honour, each naming what it would
+/* Options redstone recognises but cannot honour, each naming what it would
  * need. Silently ignoring them would make a script look like it ran with
  * settings it did not get. */
 static const char *refused_option(const char *arg)
@@ -206,11 +206,11 @@ static const char *refused_option(const char *arg)
         {"maxsize", "sqlite3_deserialize() in this build"},
         {"memtrace", "an instrumented memory allocator"},
         {"multiplex", "test_multiplex.c"},
-        {"lookaside", "start-up configuration sqlsh does not expose"},
-        {"pagecache", "start-up configuration sqlsh does not expose"},
-        {"mmap", "start-up configuration sqlsh does not expose"},
-        {"heap", "start-up configuration sqlsh does not expose"},
-        {"sorterref", "start-up configuration sqlsh does not expose"},
+        {"lookaside", "start-up configuration redstone does not expose"},
+        {"pagecache", "start-up configuration redstone does not expose"},
+        {"mmap", "start-up configuration redstone does not expose"},
+        {"heap", "start-up configuration redstone does not expose"},
+        {"sorterref", "start-up configuration redstone does not expose"},
     };
     size_t i;
 
@@ -233,12 +233,12 @@ static int apply_option(Shell *sh, char *const *argv, int i, int argc)
     const char *needs;
 
     if (option_takes_value(arg) && value == NULL) {
-        fprintf(stderr, "sqlsh: %s requires an argument\n", arg);
+        fprintf(stderr, "redstone: %s requires an argument\n", arg);
         return -1;
     }
     needs = refused_option(arg);
     if (needs != NULL) {
-        fprintf(stderr, "sqlsh: %s is not supported: it needs %s.\n", arg, needs);
+        fprintf(stderr, "redstone: %s is not supported: it needs %s.\n", arg, needs);
         return option_takes_value(arg) ? 2 : 1;
     }
 
@@ -274,7 +274,7 @@ static int apply_option(Shell *sh, char *const *argv, int i, int argc)
         long n = value != NULL ? strtol(value, &end, 10) : 0;
 
         if (value == NULL || *end != '\0' || n < 2) {
-            fprintf(stderr, "sqlsh: minimum --screenwidth is 2\n");
+            fprintf(stderr, "redstone: minimum --screenwidth is 2\n");
             return -1;
         }
         out_set_screen_width(out, (unsigned)n);
@@ -287,14 +287,14 @@ static int apply_option(Shell *sh, char *const *argv, int i, int argc)
         const char *current = db_vfs_current(shell_db(sh), "main");
 
         if (current == NULL || value == NULL || strcmp(current, value) != 0) {
-            fprintf(stderr, "sqlsh: only the \"%s\" VFS is available; ignoring -vfs %s\n",
+            fprintf(stderr, "redstone: only the \"%s\" VFS is available; ignoring -vfs %s\n",
                     current != NULL ? current : "default", value != NULL ? value : "");
         }
         return 2;
     } else if (arg[0] == '-' && is_cmdline_mode(arg + (arg[1] == '-' ? 2 : 1))) {
         (void)out_set_mode(out, arg + (arg[1] == '-' ? 2 : 1));
     } else {
-        fprintf(stderr, "sqlsh: unknown option: %s\n", arg);
+        fprintf(stderr, "redstone: unknown option: %s\n", arg);
         return -1;
     }
     return 1;
@@ -328,7 +328,7 @@ int main(int argc, char **argv)
             return 0;
         }
         if (is_opt(arg, "v") || is_opt(arg, "version")) {
-            printf("sqlsh %s (sqlite %s)\n", SQLSH_VERSION, db_sqlite_version());
+            printf("redstone %s (sqlite %s)\n", REDSTONE_VERSION, db_sqlite_version());
             return 0;
         }
         if (arg[0] == '-' && arg[1] != '\0') {
@@ -380,13 +380,13 @@ int main(int argc, char **argv)
 
     ln = line_new(stdin, stdout);
     if (ln == NULL) {
-        fputs("sqlsh: out of memory\n", stderr);
+        fputs("redstone: out of memory\n", stderr);
         db_close(db);
         return 1;
     }
     sh = shell_new(stdin, stdout, stderr);
     if (sh == NULL) {
-        fputs("sqlsh: out of memory\n", stderr);
+        fputs("redstone: out of memory\n", stderr);
         line_free(ln);
         db_close(db);
         return 1;
@@ -460,7 +460,7 @@ int main(int argc, char **argv)
         }
     } else if (status == 0 && !shell_quitting(sh)) {
         if (line_interactive(ln)) {
-            printf("sqlsh %s connected to %s\n", SQLSH_VERSION, db_path(db));
+            printf("redstone %s connected to %s\n", REDSTONE_VERSION, db_path(db));
             fputs("Enter SQL, or .help for commands, or .quit to exit.\n", stdout);
         }
         status = shell_run(sh);

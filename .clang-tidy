@@ -1,4 +1,4 @@
-# Clang-Tidy configuration for sqlsh.
+# Clang-Tidy configuration for redstone.
 #
 # Disabled checks, and why (comments must live outside the folded `Checks:`
 # scalar below, or they become part of the check list):

@@ -1,7 +1,7 @@
 /*
  * out.h - result formatting.
  *
- * Everything sqlsh prints for a query goes through here. db.c executes and
+ * Everything redstone prints for a query goes through here. db.c executes and
  * hands over values; this module decides what they look like. The split is
  * what keeps `--compat` honest: parity is a property of one module with one
  * test suite, not of formatting code scattered through the executor.
@@ -16,8 +16,8 @@
  * quote table tabs. The rest are rendered on a best-effort basis; see
  * docs/notes/phase5-output-parity.md.
  */
-#ifndef SQLSH_OUT_H
-#define SQLSH_OUT_H
+#ifndef REDSTONE_OUT_H
+#define REDSTONE_OUT_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -52,7 +52,7 @@ const char *out_mode_name(const Out *out);
  * and for completion. */
 const char *const *out_mode_names(void);
 
-/* The two starting points. `pretty` is what sqlsh does with no arguments:
+/* The two starting points. `pretty` is what redstone does with no arguments:
  * box drawing, headers, colour when the terminal takes it. `compat` is
  * sqlite3(1)'s batch default exactly: list mode, "|", no headers, no colour. */
 void out_set_pretty(Out *out);
@@ -109,4 +109,4 @@ bool out_begin(Out *out, int ncol, const char *const *names);
 bool out_row(Out *out, const OutValue *values);
 bool out_end(Out *out);
 
-#endif /* SQLSH_OUT_H */
+#endif /* REDSTONE_OUT_H */

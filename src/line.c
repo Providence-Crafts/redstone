@@ -651,7 +651,7 @@ char *line_external_edit(const char *text, size_t len)
     if (tmpdir == NULL || tmpdir[0] == '\0') {
         tmpdir = "/tmp";
     }
-    if ((size_t)snprintf(path, sizeof(path), "%s/sqlsh-edit-XXXXXX", tmpdir) >= sizeof(path)) {
+    if ((size_t)snprintf(path, sizeof(path), "%s/redstone-edit-XXXXXX", tmpdir) >= sizeof(path)) {
         return NULL;
     }
     fd = mkstemp(path);
@@ -859,7 +859,7 @@ char *line_history_path(void)
     char *path;
 
     if (state != NULL && state[0] != '\0') {
-        return join_path(state, "sqlsh/history");
+        return join_path(state, "redstone/history");
     }
     home = getenv("HOME");
     if (home == NULL || home[0] == '\0') {
@@ -869,7 +869,7 @@ char *line_history_path(void)
     if (base == NULL) {
         return NULL;
     }
-    path = join_path(base, "sqlsh/history");
+    path = join_path(base, "redstone/history");
     free(base);
     return path;
 }

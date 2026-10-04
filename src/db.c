@@ -92,7 +92,7 @@ Db *db_open(const char *path, FILE *err)
  * from the same place, so this runs on the first open and on every .open.
  *
  * DQS is the one that is set here but not in upstream's shell.c: upstream
- * compiles its own copy of SQLite with -DSQLITE_DQS=0, while sqlsh links a
+ * compiles its own copy of SQLite with -DSQLITE_DQS=0, while redstone links a
  * shared library that may have been built either way. Setting it explicitly
  * makes the behaviour the same whichever library is underneath. */
 static void configure(sqlite3 *handle)
@@ -116,7 +116,7 @@ Db *db_open_mode(const char *path, bool readonly, FILE *err)
 
     db = calloc(1u, sizeof(*db));
     if (db == NULL) {
-        fprintf(err, "sqlsh: out of memory\n");
+        fprintf(err, "redstone: out of memory\n");
         return NULL;
     }
 
@@ -124,7 +124,7 @@ Db *db_open_mode(const char *path, bool readonly, FILE *err)
     db->path = dup_str(path != NULL ? path : ":memory:");
 
     if (db->out == NULL || db->path == NULL) {
-        fprintf(err, "sqlsh: out of memory\n");
+        fprintf(err, "redstone: out of memory\n");
         db_close(db);
         return NULL;
     }
@@ -135,7 +135,7 @@ Db *db_open_mode(const char *path, bool readonly, FILE *err)
     if (rc != SQLITE_OK) {
         /* sqlite3_open allocates a handle even on failure, so the error text
          * is available and db_close still has something to free. */
-        fprintf(err, "sqlsh: cannot open %s: %s\n", db->path,
+        fprintf(err, "redstone: cannot open %s: %s\n", db->path,
                 db->handle != NULL ? sqlite3_errmsg(db->handle) : sqlite3_errstr(rc));
         db_close(db);
         return NULL;
@@ -318,7 +318,7 @@ bool db_exec(Db *db, const char *text, FILE *out, FILE *err)
         bool ok;
 
         if (sqlite3_prepare_v2(db->handle, tail, -1, &stmt, &next) != SQLITE_OK) {
-            fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(db->handle));
+            fprintf(err, "redstone: %s\n", sqlite3_errmsg(db->handle));
             sqlite3_finalize(stmt);
             return false;
         }
@@ -337,7 +337,7 @@ bool db_exec(Db *db, const char *text, FILE *out, FILE *err)
         }
 
         if (sqlite3_finalize(stmt) != SQLITE_OK || !ok) {
-            fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(db->handle));
+            fprintf(err, "redstone: %s\n", sqlite3_errmsg(db->handle));
             return false;
         }
 
@@ -349,7 +349,7 @@ bool db_exec(Db *db, const char *text, FILE *out, FILE *err)
          * so ferror alone would report success and the caller would exit 0
          * having written nothing. */
         if (fflush(out) != 0 || ferror(out)) {
-            fprintf(err, "sqlsh: write failed\n");
+            fprintf(err, "redstone: write failed\n");
             clearerr(out);
             return false;
         }
@@ -828,7 +828,7 @@ DbStmt *db_prepare(Db *db, const char *sql, FILE *err)
 
     if (stmt == NULL) {
         if (err != NULL) {
-            fprintf(err, "sqlsh: out of memory\n");
+            fprintf(err, "redstone: out of memory\n");
         }
         return NULL;
     }
@@ -836,7 +836,7 @@ DbStmt *db_prepare(Db *db, const char *sql, FILE *err)
     stmt->rc = SQLITE_OK;
     if (sqlite3_prepare_v2(db->handle, sql, -1, &stmt->handle, NULL) != SQLITE_OK) {
         if (err != NULL) {
-            fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(db->handle));
+            fprintf(err, "redstone: %s\n", sqlite3_errmsg(db->handle));
         }
         sqlite3_finalize(stmt->handle);
         free(stmt);
@@ -925,7 +925,7 @@ bool db_stmt_reset(DbStmt *stmt, FILE *err)
     ok = sqlite3_reset(stmt->handle) == SQLITE_OK &&
          (stmt->rc == SQLITE_DONE || stmt->rc == SQLITE_OK);
     if (!ok && err != NULL) {
-        fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(stmt->db->handle));
+        fprintf(err, "redstone: %s\n", sqlite3_errmsg(stmt->db->handle));
     }
     /* Bindings survive a reset, so clear them: a row with fewer fields than
      * the last one would otherwise inherit the missing values. */
@@ -945,7 +945,7 @@ bool db_finalize(DbStmt *stmt, FILE *err)
     rc = sqlite3_finalize(stmt->handle);
     ok = rc == SQLITE_OK && (stmt->rc == SQLITE_DONE || stmt->rc == SQLITE_OK);
     if (!ok && err != NULL) {
-        fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(stmt->db->handle));
+        fprintf(err, "redstone: %s\n", sqlite3_errmsg(stmt->db->handle));
     }
     free(stmt);
     return ok;
@@ -957,7 +957,7 @@ bool db_run(Db *db, const char *sql, FILE *err)
 
     if (sqlite3_exec(db->handle, sql, NULL, NULL, &msg) != SQLITE_OK) {
         if (err != NULL) {
-            fprintf(err, "sqlsh: %s\n", msg != NULL ? msg : sqlite3_errmsg(db->handle));
+            fprintf(err, "redstone: %s\n", msg != NULL ? msg : sqlite3_errmsg(db->handle));
         }
         sqlite3_free(msg);
         return false;
@@ -1073,13 +1073,13 @@ bool db_reopen(Db *db, const char *path, bool readonly, bool create, FILE *err)
     }
     copy = dup_str(path != NULL ? path : ":memory:");
     if (copy == NULL) {
-        fprintf(err, "sqlsh: out of memory\n");
+        fprintf(err, "redstone: out of memory\n");
         return false;
     }
     /* Opened before anything is torn down: a failed `.open` must leave the
      * session exactly as it was, not drop the user into no database at all. */
     if (sqlite3_open_v2(copy, &handle, flags, NULL) != SQLITE_OK) {
-        fprintf(err, "sqlsh: cannot open %s: %s\n", copy,
+        fprintf(err, "redstone: cannot open %s: %s\n", copy,
                 handle != NULL ? sqlite3_errmsg(handle) : "unknown error");
         sqlite3_close(handle);
         free(copy);
@@ -1116,7 +1116,7 @@ static bool backup_copy(Db *db, const char *dbname, const char *file, bool to_fi
         dbname = "main";
     }
     if (sqlite3_open_v2(file, &other, flags, NULL) != SQLITE_OK) {
-        fprintf(err, "sqlsh: cannot open %s: %s\n", file,
+        fprintf(err, "redstone: cannot open %s: %s\n", file,
                 other != NULL ? sqlite3_errmsg(other) : "unknown error");
         sqlite3_close(other);
         return false;
@@ -1128,7 +1128,7 @@ static bool backup_copy(Db *db, const char *dbname, const char *file, bool to_fi
 
     backup = sqlite3_backup_init(dst, dstname, src, srcname);
     if (backup == NULL) {
-        fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(dst));
+        fprintf(err, "redstone: %s\n", sqlite3_errmsg(dst));
         sqlite3_close(other);
         return false;
     }
@@ -1137,7 +1137,7 @@ static bool backup_copy(Db *db, const char *dbname, const char *file, bool to_fi
     }
     sqlite3_backup_finish(backup);
     if (rc != SQLITE_DONE) {
-        fprintf(err, "sqlsh: %s\n", sqlite3_errmsg(dst));
+        fprintf(err, "redstone: %s\n", sqlite3_errmsg(dst));
         sqlite3_close(other);
         return false;
     }
@@ -1266,7 +1266,7 @@ bool db_load_extension(Db *db, const char *file, const char *entry, FILE *err)
      * turning it off there really turns it off. */
     rc = sqlite3_load_extension(db->handle, file, entry, &msg);
     if (rc != SQLITE_OK) {
-        fprintf(err, "sqlsh: %s\n", msg != NULL ? msg : "cannot load extension");
+        fprintf(err, "redstone: %s\n", msg != NULL ? msg : "cannot load extension");
         sqlite3_free(msg);
         return false;
     }
@@ -1476,7 +1476,7 @@ bool db_file_control(Db *db, const char *dbname, const char *op, const char *arg
             }
         }
         if (rc != SQLITE_OK) {
-            fprintf(err, "sqlsh: %s failed: %s\n", op, sqlite3_errstr(rc));
+            fprintf(err, "redstone: %s failed: %s\n", op, sqlite3_errstr(rc));
             return true; /* the name was known; the call was not */
         }
         return true;

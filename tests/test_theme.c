@@ -160,7 +160,7 @@ static const char *test_comments_and_blanks(void)
 }
 
 /* The dump is not a listing that happens to look like a file: it is a file.
- * If this round-trip ever breaks, ".theme > ~/.config/sqlsh/theme" -- the
+ * If this round-trip ever breaks, ".theme > ~/.config/redstone/theme" -- the
  * documented way to start editing a theme -- silently produces a broken one. */
 static const char *test_dump_round_trips(void)
 {
@@ -225,13 +225,13 @@ static const char *test_theme_path(void)
     mu_assert("setenv", setenv("XDG_CONFIG_HOME", "/tmp/xdg", 1) == 0);
     path = theme_path();
     mu_assert("XDG_CONFIG_HOME must be honoured",
-              path != NULL && strcmp(path, "/tmp/xdg/sqlsh/theme") == 0);
+              path != NULL && strcmp(path, "/tmp/xdg/redstone/theme") == 0);
     free(path);
     mu_assert("unsetenv", unsetenv("XDG_CONFIG_HOME") == 0);
     mu_assert("setenv", setenv("HOME", "/tmp/home", 1) == 0);
     path = theme_path();
     mu_assert("HOME must be the fallback",
-              path != NULL && strcmp(path, "/tmp/home/.config/sqlsh/theme") == 0);
+              path != NULL && strcmp(path, "/tmp/home/.config/redstone/theme") == 0);
     free(path);
     return NULL;
 }
@@ -240,7 +240,7 @@ static const char *test_missing_file_is_not_an_error(void)
 {
     theme_reset();
     mu_assert("a missing theme file is the normal case",
-              theme_load_file("/nonexistent/sqlsh/theme", NULL));
+              theme_load_file("/nonexistent/redstone/theme", NULL));
     return NULL;
 }
 

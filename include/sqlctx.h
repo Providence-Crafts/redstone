@@ -17,8 +17,8 @@
  * and quite illegal fragment still yields a useful answer. That is the normal
  * case while completing, not the exception.
  */
-#ifndef SQLSH_SQLCTX_H
-#define SQLSH_SQLCTX_H
+#ifndef REDSTONE_SQLCTX_H
+#define REDSTONE_SQLCTX_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -121,4 +121,4 @@ void sql_context(const char *text, size_t cursor, SqlContext *ctx);
 /* Stable lowercase name of a context, for tests and diagnostics. */
 const char *sql_ctx_kind_name(SqlCtxKind kind);
 
-#endif /* SQLSH_SQLCTX_H */
+#endif /* REDSTONE_SQLCTX_H */

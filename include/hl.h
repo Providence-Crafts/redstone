@@ -10,8 +10,8 @@
  * would drift, and the whole reason `sqlctx.h` exposes token kinds is so that
  * this module can reuse them.
  */
-#ifndef SQLSH_HL_H
-#define SQLSH_HL_H
+#ifndef REDSTONE_HL_H
+#define REDSTONE_HL_H
 
 #include "sqlctx.h"
 
@@ -48,4 +48,4 @@ typedef struct {
  * callers never branch on it. */
 void hl_write(FILE *out, const char *text, size_t from, size_t to, const HlSchema *schema);
 
-#endif /* SQLSH_HL_H */
+#endif /* REDSTONE_HL_H */

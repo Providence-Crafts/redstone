@@ -4,8 +4,8 @@
  * This module owns everything that talks to libsqlite3. Nothing above it
  * includes <sqlite3.h>; nothing in it knows about terminals or completion.
  */
-#ifndef SQLSH_DB_H
-#define SQLSH_DB_H
+#ifndef REDSTONE_DB_H
+#define REDSTONE_DB_H
 
 #include "out.h"
 
@@ -264,4 +264,4 @@ bool db_column_collation(Db *db, const char *table, const char *column, char *bu
  * says a foreign key already has a usable index. */
 bool db_glob(const char *pattern, const char *text);
 
-#endif /* SQLSH_DB_H */
+#endif /* REDSTONE_DB_H */

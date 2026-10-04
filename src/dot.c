@@ -2,7 +2,7 @@
  * dot.c - the dot-command table and its dispatch.
  *
  * One table, one lookup, one place to add a command. Every command that
- * sqlite3(1) documents appears in it: the ones sqlsh implements and the
+ * sqlite3(1) documents appears in it: the ones redstone implements and the
  * eleven it refuses because they are backed by extension sources this
  * project deliberately does not vendor. A refusal is a table entry like any
  * other, so `.help` lists it and completion offers it -- the gap is
@@ -234,7 +234,7 @@ static bool cmd_crlf(Shell *sh, int argc, char **argv)
     return true;
 }
 
-/* `.binary` predates the encodings out.c has; every file sqlsh opens is
+/* `.binary` predates the encodings out.c has; every file redstone opens is
  * already opened in binary mode, so the flag is recorded and reported and
  * changes nothing. Saying so is better than pretending the command is
  * unknown to a script that sets it. */
@@ -269,7 +269,7 @@ static bool cmd_eqp(Shell *sh, int argc, char **argv)
         return true;
     }
     /* `full` and `trigger` add VDBE detail upstream gets from an internal
-     * flag; sqlsh treats them as `on` and says so in the docs rather than
+     * flag; redstone treats them as `on` and says so in the docs rather than
      * rejecting a script that uses them. */
     shell_set_flag(sh, SHELL_EQP,
                    strcmp(arg, "full") == 0 || strcmp(arg, "trigger") == 0 || dot_boolean(sh, arg));
@@ -371,7 +371,7 @@ static bool cmd_cd(Shell *sh, int argc, char **argv)
         return false;
     }
     if (chdir(argv[1]) != 0) {
-        fprintf(shell_err(sh), "sqlsh: cannot change to %s\n", argv[1]);
+        fprintf(shell_err(sh), "redstone: cannot change to %s\n", argv[1]);
         return false;
     }
     return true;
@@ -414,7 +414,7 @@ static bool cmd_shell(Shell *sh, int argc, char **argv)
     rc = system(text);
     free(text);
     if (rc != 0) {
-        fprintf(shell_err(sh), "sqlsh: command returned %d\n", rc);
+        fprintf(shell_err(sh), "redstone: command returned %d\n", rc);
     }
     return rc == 0;
 }
@@ -433,9 +433,9 @@ static bool cmd_read(Shell *sh, int argc, char **argv)
 
 /* Ours, not upstream's: the editor keymap. Upstream has no equivalent
  * because it has no editor of its own. */
-/* .theme: sqlsh's own. With no argument it prints the palette in the theme
+/* .theme: redstone's own. With no argument it prints the palette in the theme
  * file's own format, so that the listing is also the starting point for a
- * file: ".theme > ~/.config/sqlsh/theme" is how a user begins editing one. */
+ * file: ".theme > ~/.config/redstone/theme" is how a user begins editing one. */
 static bool cmd_theme(Shell *sh, int argc, char **argv)
 {
     FILE *out = shell_out(sh);
@@ -465,7 +465,7 @@ static bool cmd_theme(Shell *sh, int argc, char **argv)
         bool ok;
 
         if (path == NULL) {
-            fprintf(shell_err(sh), "sqlsh: no theme path: set HOME or XDG_CONFIG_HOME\n");
+            fprintf(shell_err(sh), "redstone: no theme path: set HOME or XDG_CONFIG_HOME\n");
             return false;
         }
         theme_reset();
@@ -509,7 +509,7 @@ static bool cmd_edit(Shell *sh, int argc, char **argv)
     edited = line_external_edit(seed, strlen(seed));
     free(joined);
     if (edited == NULL) {
-        fprintf(shell_err(sh), "sqlsh: EDITOR failed\n");
+        fprintf(shell_err(sh), "redstone: EDITOR failed\n");
         return false;
     }
     line_seed(ln, edited);
@@ -577,7 +577,7 @@ static bool cmd_open(Shell *sh, int argc, char **argv)
         } else if (strcmp(argv[i], "--new") == 0 || strcmp(argv[i], "-new") == 0) {
             fresh = true;
         } else if (argv[i][0] == '-') {
-            fprintf(shell_err(sh), "sqlsh: unknown option to .open: %s\n", argv[i]);
+            fprintf(shell_err(sh), "redstone: unknown option to .open: %s\n", argv[i]);
             return false;
         } else {
             path = argv[i];
@@ -993,7 +993,7 @@ REFUSE("ar",    "...",               "Alias for .archive",                      
 {"cd",        cmd_cd,                "DIRECTORY",        "Change the working directory",             NULL, A_FILE},
 {"changes",   cmd_changes,           "on|off",           "Show number of rows changed by SQL",       NULL, A_BOOL},
 REFUSE("check","GLOB",               "Fail if output since .testcase does not match",                "the TCL test harness"),
-{"clear",     cmd_clear,             "",                 "Clear the terminal screen (sqlsh)",        NULL, A_NONE},
+{"clear",     cmd_clear,             "",                 "Clear the terminal screen (redstone)",        NULL, A_NONE},
 {"clone",     schema_cmd_clone,      "NEWDB",            "Clone data into NEWDB from the existing database", NULL, A_FILE},
 {"connection",cmd_connection,        "?close? ?NUMBER?", "Open or close an auxiliary database connection", NULL, A_NONE},
 {"crlf",      cmd_crlf,              "?on|off?",         "Use \\r\\n line endings on output",        NULL, A_BOOL},
@@ -1004,8 +1004,8 @@ REFUSE("check","GLOB",               "Fail if output since .testcase does not ma
 {"dbtotxt",   schema_cmd_dbtotxt,    "",                 "Hex dump of the database file",            NULL, A_NONE},
 {"dump",      schema_cmd_dump,       "?OPTIONS? ?LIKE?", "Render database content as SQL",           NULL, A_TABLE},
 {"echo",      cmd_echo,              "on|off",           "Turn command echo on or off",              NULL, A_BOOL},
-{"edit",      cmd_edit,              "?TEXT?",           "Edit TEXT, or the last line, in $VISUAL/$EDITOR/vi (sqlsh)", NULL, A_NONE},
-{"editor",    cmd_editor,            "emacs|vi",         "Select the line-editor keymap (sqlsh)",    NULL, A_NONE},
+{"edit",      cmd_edit,              "?TEXT?",           "Edit TEXT, or the last line, in $VISUAL/$EDITOR/vi (redstone)", NULL, A_NONE},
+{"editor",    cmd_editor,            "emacs|vi",         "Select the line-editor keymap (redstone)",    NULL, A_NONE},
 {"eqp",       cmd_eqp,               "on|off|full",      "Enable or disable automatic EXPLAIN QUERY PLAN", NULL, A_BOOL},
 {"excel",     import_cmd_excel,      "?QUERY?",          "Display the output of next command in spreadsheet", NULL, A_NONE},
 {"exit",      cmd_exit,              "?CODE?",           "Exit this program with return-code CODE",  NULL, A_NONE},
@@ -1052,7 +1052,7 @@ REFUSE("sha3sum","?OPTIONS?",        "Compute a SHA3 hash of database content", 
 {"system",    cmd_shell,             "CMD ARGS...",      "Run CMD ARGS... in a system shell",        NULL, A_NONE},
 {"tables",    schema_cmd_tables,     "?TABLE?",          "List names of tables matching LIKE pattern TABLE", NULL, A_TABLE},
 REFUSE("testcase","NAME",            "Begin redirecting output to NAME",                             "the TCL test harness"),
-{"theme",     cmd_theme,             "?NAME|FILE?",      "Show, load or reload the colour theme (sqlsh)", NULL, A_FILE},
+{"theme",     cmd_theme,             "?NAME|FILE?",      "Show, load or reload the colour theme (redstone)", NULL, A_FILE},
 {"timeout",   cmd_timeout,           "MS",               "Try opening locked tables for MS milliseconds", NULL, A_NONE},
 {"timer",     cmd_timer,             "on|off",           "Turn SQL timer on or off",                 NULL, A_BOOL},
 {"trace",     cmd_trace,             "?OPTIONS?",        "Output each SQL statement as it is run",   NULL, A_FILE},
@@ -1151,9 +1151,9 @@ static void suggest(Shell *sh, const char *name)
         }
     }
     if (best != NULL && best_len >= 2u) {
-        fprintf(shell_err(sh), "sqlsh: unknown command: .%s -- did you mean .%s?\n", name, best);
+        fprintf(shell_err(sh), "redstone: unknown command: .%s -- did you mean .%s?\n", name, best);
     } else {
-        fprintf(shell_err(sh), "sqlsh: unknown command: .%s\n", name);
+        fprintf(shell_err(sh), "redstone: unknown command: .%s\n", name);
     }
 }
 
@@ -1174,7 +1174,7 @@ bool dot_run(Shell *sh, const char *line)
     line++;
     n = strlen(line);
     if (n >= sizeof(buf)) {
-        fprintf(shell_err(sh), "sqlsh: command too long\n");
+        fprintf(shell_err(sh), "redstone: command too long\n");
         return false;
     }
     memcpy(buf, line, n + 1u);
@@ -1190,7 +1190,7 @@ bool dot_run(Shell *sh, const char *line)
     }
     if (cmd->needs != NULL) {
         fprintf(shell_err(sh),
-                "sqlsh: .%s is not supported: it needs %s, which sqlsh does not vendor.\n"
+                "redstone: .%s is not supported: it needs %s, which redstone does not vendor.\n"
                 "       Use sqlite3(1) for this command.\n",
                 cmd->name, cmd->needs);
         return false;

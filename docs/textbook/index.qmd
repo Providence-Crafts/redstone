@@ -1,7 +1,7 @@
 ---
-title: "sqlsh"
+title: "redstone"
 subtitle: "A Drop-In, Completion-Aware SQLite Shell — Design and Implementation"
-author: "sqlsh project"
+author: "redstone project"
 date: today
 format:
   html:
@@ -28,19 +28,19 @@ execute:
 
 # Introduction
 
-`sqlsh` is a from-scratch, C99 reimplementation of the `sqlite3(1)` command-line
+`redstone` is a from-scratch, C99 reimplementation of the `sqlite3(1)` command-line
 shell. It is built to be a **drop-in replacement**: every dot command, output
 mode, and command-line flag that upstream `sqlite3(1)` accepts is either
 implemented to the same behaviour or refused with an explicit message — never
-silently ignored. `sqlsh --compat` reproduces upstream exactly, verified
+silently ignored. `redstone --compat` reproduces upstream exactly, verified
 byte-for-byte by a differential test suite that runs the same input through
 both binaries and compares the output.
 
-Outside `--compat`, sqlsh adds what a modern interactive shell is expected to
+Outside `--compat`, redstone adds what a modern interactive shell is expected to
 have and upstream's `shell.c` does not: a navigable, zsh-style completion
 menu; live syntax highlighting of the statement as it is typed; a colour theme
 system; and box-drawn, terminal-width-aware output by default. The design
-premise is that `alias sqlite3=sqlsh` should survive a normal day's work —
+premise is that `alias sqlite3=redstone` should survive a normal day's work —
 nothing about scripting or automation should notice the substitution, while
 interactive use gets meaningfully better.
 
@@ -52,7 +52,7 @@ the codebase for the first time.
 
 ## Scope and non-goals
 
-Stating what `sqlsh` deliberately does not attempt keeps the rest of the
+Stating what `redstone` deliberately does not attempt keeps the rest of the
 design legible:
 
 - **No bundled SQLite extensions.** Upstream `shell.c` carries `sqlar`,
@@ -76,7 +76,7 @@ with a dozen extension sources. It cannot be meaningfully diffed, re-derived,
 or hand-maintained, and grafting a completion engine onto it would mean
 owning a blob nobody in this project wrote.
 
-`sqlsh` is therefore built against the public `sqlite3` C API rather than as a
+`redstone` is therefore built against the public `sqlite3` C API rather than as a
 textual fork. Upstream `shell.c` is kept for consultation only: `make
 reference` copies it into `reference/`, sourced from the same amalgamation
 the Nix flake already pins — so the project names one SQLite version, not two
@@ -86,21 +86,21 @@ column-width algorithm), it is read there and reimplemented deliberately.
 
 The tradeoff this accepts is that parity must be *built and verified*
 deliberately rather than inherited for free. It is measured, not claimed: the
-gate runs a differential suite that executes identical input through `sqlsh
+gate runs a differential suite that executes identical input through `redstone
 --compat` and the `sqlite3` binary from the flake and diffs the two outputs
 byte for byte. What is gained in return is that every line under `src/` is
 the project's own, small, and auditable.
 
 ## Dependencies
 
-`sqlsh` depends on exactly one library beyond libc and POSIX: `libsqlite3`.
+`redstone` depends on exactly one library beyond libc and POSIX: `libsqlite3`.
 
 Notably absent is any line-editing library. This is a deliberate consequence
 of the feature set, not asceticism: GNU readline, libedit, and linenoise all
 implement completion as *print a list of candidates and return to the
 prompt*. None has a concept of a persistent, navigable selection menu that
 narrows as the user keeps typing. Reproducing zsh's completion behaviour means
-owning the terminal outright, so `sqlsh` does, in `line.c` and `menu.c`.
+owning the terminal outright, so `redstone` does, in `line.c` and `menu.c`.
 
 Two build paths exist for SQLite itself, and both are exercised by the gate:
 
@@ -182,7 +182,7 @@ double-quoted-string-literals off, `SELECT "typo"` is a compile error rather
 than a string literal that silently returns the wrong thing.
 
 Disabling that setting explicitly matters because upstream `sqlite3(1)`
-compiles its own SQLite with `-DSQLITE_DQS=0`, while `sqlsh` links whichever
+compiles its own SQLite with `-DSQLITE_DQS=0`, while `redstone` links whichever
 shared `libsqlite3` the system provides, which may or may not have been built
 the same way. Setting it in `db.c` makes the two shells behave identically
 regardless of which library sits underneath either one.
@@ -333,8 +333,8 @@ whole palette and never the shell's ability to start.
 format, so `.theme` with no argument is simultaneously a listing and a
 ready-to-edit starting point; a test asserts the round trip for every shipped
 palette. `.theme` also accepts `list`, `reload`, `on`/`off`, a built-in name,
-or a file path. The theme file itself lives at `$XDG_CONFIG_HOME/sqlsh/theme`
-(defaulting to `~/.config/sqlsh/theme`), and `-noinit` suppresses it exactly
+or a file path. The theme file itself lives at `$XDG_CONFIG_HOME/redstone/theme`
+(defaulting to `~/.config/redstone/theme`), and `-noinit` suppresses it exactly
 as it suppresses `~/.sqliterc`.
 
 # Terminal handling
@@ -349,7 +349,7 @@ window does not leave stale rows on screen.
 Output uses plain ANSI escape sequences directly; there is no dependency on
 terminfo or ncurses. The escape set in use is small and universally
 supported: cursor movement, erase-line, erase-to-end-of-screen, and SGR
-colour codes. When standard output is not a terminal, `sqlsh` reads lines
+colour codes. When standard output is not a terminal, `redstone` reads lines
 with `fgets` and performs no editing at all, so piping input through the
 shell continues to work exactly as it would with any other batch tool.
 
@@ -390,7 +390,7 @@ equivalent to diff against or are rarely used enough that hand verification
 suffices. Inside the shell, `.help mode` lists the option flags each mode
 accepts.
 
-Where `sqlsh` knowingly diverges from upstream — an extension this build does
+Where `redstone` knowingly diverges from upstream — an extension this build does
 not vendor, or an output mode the shipped `sqlite3(1)` binary itself
 rejects — the gap is refused loudly, with an error naming exactly what is
 missing, rather than approximated silently. `docs/notes/` and the project's
@@ -497,7 +497,7 @@ the plain foreground rather than falsely highlighted as known; that
 clamped; and that killing the shell mid-line with `SIGTERM` leaves the
 terminal in normal, non-raw mode without requiring the user to run `reset`.
 
-# Using sqlsh
+# Using redstone
 
 ## Building
 
@@ -506,7 +506,7 @@ The entire toolchain is pinned by a Nix flake; no system dependency beyond
 
 ```sh
 nix develop            # enter the dev shell once, then run make from inside it
-make                    # debug build -> bin/sqlsh
+make                    # debug build -> bin/redstone
 make release            # optimised build
 make SQLITE=vendored    # build against the SQLite amalgamation instead
 make test               # unit + pty tests under ASan+UBSan
@@ -519,19 +519,19 @@ make install PREFIX=~/.local
 `cppcheck`, `compdb`, and `watch`. Without Nix, `nix build` — using the
 flake's default package — produces the same release binary.
 
-`make install` places `bin/sqlsh` and its man page only; it never installs a
+`make install` places `bin/redstone` and its man page only; it never installs a
 symlink or copy named `sqlite3`, leaving that substitution to the user's own
 `alias`.
 
 ## Basic usage
 
 ```sh
-sqlsh mydb.db                              # interactive, completion + highlighting + box output
-sqlsh --compat mydb.db "SELECT * FROM t;"  # scripting, byte-identical to sqlite3(1)
-alias sqlite3=sqlsh                        # meant to survive a normal day's work
+redstone mydb.db                              # interactive, completion + highlighting + box output
+redstone --compat mydb.db "SELECT * FROM t;"  # scripting, byte-identical to sqlite3(1)
+alias sqlite3=redstone                        # meant to survive a normal day's work
 ```
 
-With no database argument, `sqlsh` opens an in-memory database, exactly as
+With no database argument, `redstone` opens an in-memory database, exactly as
 `sqlite3(1)` does. Any SQL given on the command line after the database name
 runs as a batch, after which the shell exits; with none given, it opens the
 interactive prompt, or reads statements from standard input when that is not
@@ -585,7 +585,7 @@ Two keymaps are available, switched at runtime with `.editor emacs` or
 
 ## Reference documentation
 
-`man sqlsh` (`docs/sqlsh.1`) is the exhaustive reference: every flag, every
+`man redstone` (`docs/redstone.1`) is the exhaustive reference: every flag, every
 output mode, every file location, every environment variable, and the exit
 status convention. It documents, among other things:
 
@@ -600,7 +600,7 @@ status convention. It documents, among other things:
 
 # Summary
 
-`sqlsh` demonstrates that a drop-in-compatible tool and a meaningfully better
+`redstone` demonstrates that a drop-in-compatible tool and a meaningfully better
 interactive tool are not in tension, provided compatibility is architecturally
 isolated rather than bolted on. The `--compat` flag and its differential test
 suite give upstream behaviour a hard boundary; everything on the other side

@@ -39,12 +39,12 @@ static const char *test_width_char_cjk(void)
     return NULL;
 }
 
-/* An emoji outside the table's double-wide spans: the table sqlsh carries
+/* An emoji outside the table's double-wide spans: the table redstone carries
  * (upstream's own, see the note in width.c) does not special-case the emoji
  * block, so these fall through to whatever span precedes them -- one cell
  * here. This documents that actual behaviour; it is not a claim that one
  * cell is the "right" width for an emoji, only that a change to it would be
- * a change in the table sqlsh is required to match byte-for-byte. */
+ * a change in the table redstone is required to match byte-for-byte. */
 static const char *test_width_char_emoji(void)
 {
     mu_assert("emoji width should match the table's span, not a special case",

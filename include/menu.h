@@ -7,8 +7,8 @@
  * selection arithmetic be tested without a pty, leaving only the placement of
  * the cursor to the pty tests.
  */
-#ifndef SQLSH_MENU_H
-#define SQLSH_MENU_H
+#ifndef REDSTONE_MENU_H
+#define REDSTONE_MENU_H
 
 #include "comp.h"
 
@@ -45,4 +45,4 @@ void menu_move(Menu *m, MenuMove move);
  * "" with *rows 0 when the menu is inactive. */
 const char *menu_render(Menu *m, unsigned *rows);
 
-#endif /* SQLSH_MENU_H */
+#endif /* REDSTONE_MENU_H */

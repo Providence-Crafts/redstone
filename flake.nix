@@ -1,5 +1,5 @@
 {
-  description = "sqlsh - a minimal SQLite shell with zsh-style completion (C99)";
+  description = "redstone - a minimal SQLite shell with zsh-style completion (C99)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -30,7 +30,7 @@
       in
       {
         packages.default = pkgs.stdenv.mkDerivation {
-          pname = "sqlsh";
+          pname = "redstone";
           version = "0.1.0";
           src = ./.;
           nativeBuildInputs = [ pkgs.pkg-config ];
@@ -93,7 +93,7 @@
           };
 
           shellHook = ''
-            echo "sqlsh dev environment"
+            echo "redstone dev environment"
             echo "  clang    $(clang --version | head -n1 | cut -d' ' -f1-3)"
             echo "  sqlite3  $(sqlite3 --version | cut -d' ' -f1)"
             echo "  libsqlite3 $(pkg-config --modversion sqlite3)"

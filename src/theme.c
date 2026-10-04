@@ -611,7 +611,7 @@ bool theme_load(const char *name, FILE *err)
 
         if (f == NULL) {
             if (err != NULL) {
-                fprintf(err, "sqlsh: no such theme: %s\n", name);
+                fprintf(err, "redstone: no such theme: %s\n", name);
             }
             return false;
         }
@@ -625,7 +625,8 @@ char *theme_path(void)
     const char *xdg = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
     const char *base = (xdg != NULL && xdg[0] != '\0') ? xdg : home;
-    const char *tail = (xdg != NULL && xdg[0] != '\0') ? "/sqlsh/theme" : "/.config/sqlsh/theme";
+    const char *tail =
+        (xdg != NULL && xdg[0] != '\0') ? "/redstone/theme" : "/.config/redstone/theme";
     size_t n;
     char *path;
 

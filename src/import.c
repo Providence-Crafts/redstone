@@ -302,20 +302,20 @@ static bool import_parse_args(Shell *sh, int argc, char **argv, ImportArgs *a)
             } else if (a->table == NULL) {
                 a->table = z;
             } else {
-                fprintf(shell_err(sh), "sqlsh: .import: unknown argument \"%s\"\n", argv[i]);
+                fprintf(shell_err(sh), "redstone: .import: unknown argument \"%s\"\n", argv[i]);
                 return false;
             }
         } else if (strcmp(z, "-v") == 0) {
             a->verbose++;
         } else if (strcmp(z, "-schema") == 0) {
             if (i >= argc - 1) {
-                fprintf(shell_err(sh), "sqlsh: .import: -schema requires an argument\n");
+                fprintf(shell_err(sh), "redstone: .import: -schema requires an argument\n");
                 return false;
             }
             a->schema = argv[++i];
         } else if (strcmp(z, "-skip") == 0) {
             if (i >= argc - 1) {
-                fprintf(shell_err(sh), "sqlsh: .import: -skip requires an argument\n");
+                fprintf(shell_err(sh), "redstone: .import: -skip requires an argument\n");
                 return false;
             }
             a->skip = strtoll(argv[++i], NULL, 10);
@@ -326,12 +326,12 @@ static bool import_parse_args(Shell *sh, int argc, char **argv, ImportArgs *a)
             a->ascii = false;
             a->csv_set = true;
         } else {
-            fprintf(shell_err(sh), "sqlsh: .import: unknown option \"%s\"\n", argv[i]);
+            fprintf(shell_err(sh), "redstone: .import: unknown option \"%s\"\n", argv[i]);
             return false;
         }
     }
     if (a->table == NULL) {
-        fprintf(shell_err(sh), "sqlsh: .import: missing %s argument\n",
+        fprintf(shell_err(sh), "redstone: .import: missing %s argument\n",
                 a->file == NULL ? "FILE" : "TABLE");
         return false;
     }
@@ -559,17 +559,17 @@ bool import_cmd_import(Shell *sh, int argc, char **argv)
         a.rowsep = '\n';
     }
     if (((unsigned char)a.colsep & 0x80u) != 0u) {
-        fprintf(shell_err(sh), "sqlsh: .import column separator must be ASCII\n");
+        fprintf(shell_err(sh), "redstone: .import column separator must be ASCII\n");
         return false;
     }
     if (((unsigned char)a.rowsep & 0x80u) != 0u) {
-        fprintf(shell_err(sh), "sqlsh: .import row separator must be ASCII\n");
+        fprintf(shell_err(sh), "redstone: .import row separator must be ASCII\n");
         return false;
     }
 
     file = fopen(a.file, "rb");
     if (file == NULL) {
-        fprintf(shell_err(sh), "sqlsh: .import: cannot open \"%s\"\n", a.file);
+        fprintf(shell_err(sh), "redstone: .import: cannot open \"%s\"\n", a.file);
         return false;
     }
     reader_init(&rd, file);
@@ -615,7 +615,7 @@ bool import_cmd_import(Shell *sh, int argc, char **argv)
     }
     ok = ok && str_append(&insert_sql, ")");
     if (!ok) {
-        fprintf(shell_err(sh), "sqlsh: out of memory\n");
+        fprintf(shell_err(sh), "redstone: out of memory\n");
         str_free(&insert_sql);
         reader_free(&rd);
         (void)fclose(file);
@@ -740,7 +740,7 @@ static bool make_temp_path(char *buf, size_t bufsize, const char *tag, const cha
     if (dir == NULL || dir[0] == '\0') {
         dir = "/tmp";
     }
-    n = snprintf(buf, bufsize, "%s/sqlsh-%s-%ld.%s", dir, tag, (long)getpid(), ext);
+    n = snprintf(buf, bufsize, "%s/redstone-%s-%ld.%s", dir, tag, (long)getpid(), ext);
     return n > 0 && (size_t)n < bufsize;
 }
 
@@ -794,7 +794,7 @@ static void launch_opener(Shell *sh, const char *path)
     int n = snprintf(cmd, sizeof(cmd), "xdg-open '%s'", path);
 
     if (n <= 0 || (size_t)n >= sizeof(cmd)) {
-        fprintf(shell_err(sh), "sqlsh: temp file path too long to open\n");
+        fprintf(shell_err(sh), "redstone: temp file path too long to open\n");
         return;
     }
     /* .excel and .www exist to hand the file to the desktop's opener; -safe
@@ -802,7 +802,7 @@ static void launch_opener(Shell *sh, const char *path)
      * built ourselves under the temp directory, not user text. */
     /* NOLINTNEXTLINE(cert-env33-c,clang-analyzer-optin.taint.GenericTaint) */
     if (system(cmd) != 0) {
-        fprintf(shell_err(sh), "sqlsh: failed: [%s]\n", cmd);
+        fprintf(shell_err(sh), "redstone: failed: [%s]\n", cmd);
     }
 }
 
@@ -864,7 +864,7 @@ static bool excel_or_www(Shell *sh, int argc, char **argv, const char *name, con
         return false;
     }
     if (!make_temp_path(path, sizeof(path), name, ext)) {
-        fprintf(shell_err(sh), "sqlsh: .%s: cannot build a temporary file name\n", name);
+        fprintf(shell_err(sh), "redstone: .%s: cannot build a temporary file name\n", name);
         return false;
     }
 
@@ -877,7 +877,7 @@ static bool excel_or_www(Shell *sh, int argc, char **argv, const char *name, con
          * opener only once the file holds real content. */
         if (!out_save(out, &saved)) {
             free(query);
-            fprintf(shell_err(sh), "sqlsh: out of memory\n");
+            fprintf(shell_err(sh), "redstone: out of memory\n");
             return false;
         }
         ok = shell_redirect(sh, path, false);

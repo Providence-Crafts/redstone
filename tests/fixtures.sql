@@ -1,4 +1,4 @@
--- Fixture database for sqlsh tests.
+-- Fixture database for redstone tests.
 -- Regenerate with `make fixtures`. The resulting test.db is not committed.
 --
 -- Shapes here are chosen to break naive completion:

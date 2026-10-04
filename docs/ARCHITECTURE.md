@@ -1,6 +1,6 @@
-# sqlsh Architecture
+# redstone Architecture
 
-`sqlsh` is a minimal interactive SQLite shell whose distinguishing feature is
+`redstone` is a minimal interactive SQLite shell whose distinguishing feature is
 zsh-style completion: pressing `<Tab>` opens a navigable menu of candidates
 derived from the live database schema and, where useful, its contents.
 
@@ -14,7 +14,7 @@ This document holds design detail only.
 
 ## Scope and non-goals
 
-`sqlsh` is a drop-in replacement for `sqlite3(1)`: the same dot commands, the
+`redstone` is a drop-in replacement for `sqlite3(1)`: the same dot commands, the
 same output modes and the same command-line flags, with completion, colour and
 theming added. Upstream defaults are available exactly, behind `--compat`.
 
@@ -37,7 +37,7 @@ extension sources. It cannot be meaningfully diffed, re-derived, or
 hand-maintained, and patching a completion engine into it would mean owning a
 blob nobody in this repository wrote.
 
-`sqlsh` is therefore a clean-room reimplementation against the public `sqlite3`
+`redstone` is therefore a clean-room reimplementation against the public `sqlite3`
 C API rather than a textual fork. Upstream `shell.c` is kept for consultation
 only, copied on demand into `reference/` by `make reference` — out of the same
 amalgamation the flake already pins, so the project names one sqlite version,
@@ -47,7 +47,7 @@ algorithm — we read it there and reimplement deliberately.
 
 The tradeoff accepted: parity must be built and verified deliberately rather
 than inherited. It is therefore measured, not claimed — from Phase 5 the gate
-runs a differential suite that executes the same input through `sqlsh --compat`
+runs a differential suite that executes the same input through `redstone --compat`
 and through the `sqlite3` binary from the flake and compares byte for byte. The
 gain: every line in `src/` is ours, small, and auditable.
 
@@ -125,7 +125,7 @@ every `.open`: double-quoted string literals off (DDL and DML), defensive on,
 trusted-schema off, statement scan-status off, extension loading enabled. They
 are behaviour, not decoration — with DQS off, `SELECT "typo"` is an error
 rather than a string. DQS in particular has to be set explicitly because
-upstream compiles its own SQLite with `-DSQLITE_DQS=0`, while sqlsh links a
+upstream compiles its own SQLite with `-DSQLITE_DQS=0`, while redstone links a
 shared `libsqlite3` that may have been built either way; setting it here makes
 the two behave identically whichever library is underneath.
 
@@ -250,7 +250,7 @@ typo costs the user that one line, never the palette and never the shell.
 listing and a starting point for editing at once; a test asserts the round trip
 for every shipped palette. `.theme` also takes `list`, `reload`, `on`/`off`, or
 a built-in name or file path. The theme file lives at
-`$XDG_CONFIG_HOME/sqlsh/theme`, defaulting to `~/.config/sqlsh/theme`, and
+`$XDG_CONFIG_HOME/redstone/theme`, defaulting to `~/.config/redstone/theme`, and
 `-noinit` suppresses it exactly as it suppresses `~/.sqliterc`.
 
 ## Terminal handling
@@ -262,7 +262,7 @@ shell that leaves a terminal in raw mode after a crash is worse than no shell.
 
 Output uses plain ANSI escapes; no terminfo, no ncurses. The set used is small
 and universally supported (cursor movement, erase line, erase to end of screen,
-SGR). When `stdout` is not a tty, `sqlsh` reads lines with `fgets` and does no
+SGR). When `stdout` is not a tty, `redstone` reads lines with `fgets` and does no
 editing at all, so pipes keep working.
 
 Known edge cases, tracked rather than hidden: input lines longer than the

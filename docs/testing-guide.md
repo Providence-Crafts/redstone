@@ -1,6 +1,6 @@
 # Testing guide
 
-A walkthrough for exercising `sqlsh` by hand, beyond what `make gate` already
+A walkthrough for exercising `redstone` by hand, beyond what `make gate` already
 proves automatically. Use it after a build, before a release, or whenever a
 change touches the terminal layer (completion, highlighting, output width) —
 the one class of behaviour the automatic suite cannot fully see, because it
@@ -19,14 +19,14 @@ make fixtures   # tests/test.db, if not already generated
 make gate       # confirms the automatic baseline before you start by hand
 ```
 
-Everything below assumes `./bin/sqlsh` is the freshly built binary and
+Everything below assumes `./bin/redstone` is the freshly built binary and
 `tests/test.db` is the fixture database, unless a step says otherwise.
 
 ## 1. Smoke test
 
 ```sh
-./bin/sqlsh tests/test.db "SELECT * FROM employees LIMIT 3;"
-./bin/sqlsh --compat tests/test.db "SELECT * FROM employees LIMIT 3;"
+./bin/redstone tests/test.db "SELECT * FROM employees LIMIT 3;"
+./bin/redstone --compat tests/test.db "SELECT * FROM employees LIMIT 3;"
 ```
 
 - Default: box-drawn, coloured, headers on.
@@ -38,7 +38,7 @@ Everything below assumes `./bin/sqlsh` is the freshly built binary and
 
 ## 2. Completion menu
 
-Open `./bin/sqlsh tests/test.db` interactively for all of this section.
+Open `./bin/redstone tests/test.db` interactively for all of this section.
 
 **The four headline scenarios**
 
@@ -86,10 +86,10 @@ While typing, in the interactive shell:
   confirm `nosuchcolumn` does *not* get the "known column" colour.
 - An unbalanced quote or paren shows the error colour — this is also the
   visual cue for why the prompt is asking for a continuation line.
-- `NO_COLOR=1 ./bin/sqlsh tests/test.db` disables highlighting as well as
+- `NO_COLOR=1 ./bin/redstone tests/test.db` disables highlighting as well as
   output colour (both, not just one).
 - A malformed theme file falls back to the built-in palette rather than
-  refusing to start — plant a broken `~/.config/sqlsh/theme` (e.g. an unknown
+  refusing to start — plant a broken `~/.config/redstone/theme` (e.g. an unknown
   section, or `color = not-a-color`) and confirm the shell still starts, with
   a diagnostic rather than a crash.
 - **Not automatable** (`PROJECT.md` Phase 7 manual check): are colours
@@ -120,8 +120,8 @@ worth *doing*, not just reading:
 - `.editor vi` then `.editor emacs`: switches the keymap without restarting,
   and the prompt shows the vi mode indicator only in vi mode.
 - History: run a few statements, restart the shell, press `↑` — history
-  should have persisted (`$XDG_STATE_HOME/sqlsh/history`, default
-  `~/.local/state/sqlsh/history`).
+  should have persisted (`$XDG_STATE_HOME/redstone/history`, default
+  `~/.local/state/redstone/history`).
 - `Ctrl-C` on a partially-typed line abandons it without exiting the shell;
   `Ctrl-D` on an *empty* line exits, on a non-empty line deletes forward.
 - Kill the shell (`kill -TERM <pid>`) mid-line and confirm the terminal is
@@ -136,7 +136,7 @@ worth *doing*, not just reading:
   against a 20-column pty; a real terminal is still worth a manual spot
   check, since actual wrapping behaviour varies slightly by terminal
   emulator.)
-- Non-interactive: `echo "SELECT 1;" | ./bin/sqlsh tests/test.db` should
+- Non-interactive: `echo "SELECT 1;" | ./bin/redstone tests/test.db` should
   write no escape sequences at all — pipe it through `cat -v` and confirm
   there's nothing but the plain result.
 
@@ -144,7 +144,7 @@ worth *doing*, not just reading:
 
 ```sh
 for m in ascii box column csv html insert json line list markdown quote table tabs; do
-  diff <(./bin/sqlsh --compat -$m tests/test.db "SELECT * FROM employees;") \
+  diff <(./bin/redstone --compat -$m tests/test.db "SELECT * FROM employees;") \
        <(sqlite3 -$m tests/test.db "SELECT * FROM employees;")
 done
 ```
@@ -156,7 +156,7 @@ choosing that isn't in the fixture set.)
 **Edge cases specific to this project, not just parity:**
 
 - `-screenwidth 1` (or `.mode --screenwidth 1`) must be **rejected**:
-  `sqlsh: minimum --screenwidth is 2`, exit code 2. `-screenwidth 2` is the
+  `redstone: minimum --screenwidth is 2`, exit code 2. `-screenwidth 2` is the
   smallest accepted value.
 - `.mode box --widths 10,0` (pin one column, leave another free) on a wide
   row, then shrink `--screenwidth`: the pinned column must stay exactly its
@@ -170,7 +170,7 @@ choosing that isn't in the fixture set.)
 - A row containing CJK characters and a row containing combining characters
   (e.g. `é` as `e` + combining acute) should still align columns correctly in
   `box` and `column` mode.
-- `LC_ALL=C ./bin/sqlsh tests/test.db` should fall back to ASCII borders
+- `LC_ALL=C ./bin/redstone tests/test.db` should fall back to ASCII borders
   (`+`/`-`/`|`) instead of Unicode box-drawing characters, and stay aligned.
 - A blob containing an embedded NUL byte, printed under
   `.mode box --blob-quote text`: expect **truncation at the NUL** (a C-string
@@ -188,8 +188,8 @@ choosing that isn't in the fixture set.)
   extension source it needs, not "unknown command" and not silent success.
 - `-noinit` suppresses **both** `~/.sqliterc` and the theme file. Put
   `.mode box` in `~/.sqliterc` (temporarily — remember to remove it after):
-  `./bin/sqlsh tests/test.db "SELECT 1;"` should come out in `box` mode,
-  `./bin/sqlsh -noinit tests/test.db "SELECT 1;"` should come out in `list`
+  `./bin/redstone tests/test.db "SELECT 1;"` should come out in `box` mode,
+  `./bin/redstone -noinit tests/test.db "SELECT 1;"` should come out in `list`
   mode instead. (`PROJECT.md` Phase 6 manual check — not automated because
   the suite will not plant files in a real `$HOME`.)
 - `.import` a CSV with embedded commas, quotes, and newlines inside quoted
@@ -202,7 +202,7 @@ choosing that isn't in the fixture set.)
   `-safe`, and that a line prefixed with the matching nonce is allowed
   through for that one line only.
 - **The big one, ongoing rather than a single session**
-  (`PROJECT.md` Phase 6 manual check): `alias sqlite3=sqlsh` and use it for a
+  (`PROJECT.md` Phase 6 manual check): `alias sqlite3=redstone` and use it for a
   real day's work. Anything that behaves differently from actual
   `sqlite3(1)` is a parity bug worth filing, not something to route around.
 
@@ -224,7 +224,7 @@ Match the area you touched against the table below, then run at minimum
 - **`PROJECT.md`** — "Known gaps" tables (per phase) and "Manual checks
   outstanding" are the canonical, living list this guide draws from; check
   there for anything newer than this guide.
-- **`docs/sqlsh.1`** (`man sqlsh`) — the full flag/mode/file reference.
+- **`docs/redstone.1`** (`man redstone`) — the full flag/mode/file reference.
 - **`docs/notes/`** — phase-specific parity investigation notes (e.g.
   `phase5-parity-findings.md`), for *why* a specific difference from upstream
   exists.

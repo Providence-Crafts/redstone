@@ -6,8 +6,8 @@
  * every keybinding testable without a pty; `line.c` is the thin terminal layer
  * that drives it.
  */
-#ifndef SQLSH_EDIT_H
-#define SQLSH_EDIT_H
+#ifndef REDSTONE_EDIT_H
+#define REDSTONE_EDIT_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -102,4 +102,4 @@ void edit_history_clear(Edit *e);
 void edit_history_set_max(Edit *e, size_t max);
 size_t edit_history_max(const Edit *e);
 
-#endif /* SQLSH_EDIT_H */
+#endif /* REDSTONE_EDIT_H */

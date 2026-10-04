@@ -11,8 +11,8 @@
  * exactly one statement, so the stream cannot keep being passed down from
  * the REPL as a parameter.
  */
-#ifndef SQLSH_SHELL_H
-#define SQLSH_SHELL_H
+#ifndef REDSTONE_SHELL_H
+#define REDSTONE_SHELL_H
 
 #include "db.h"
 #include "line.h"
@@ -124,11 +124,11 @@ int shell_status(const Shell *sh);
 /* Read FILE line by line through shell_feed. `.read` and the init files. */
 bool shell_source(Shell *sh, const char *path, bool complain);
 
-/* The init files, in order: ~/.sqliterc then $XDG_CONFIG_HOME/sqlsh/sqlshrc,
+/* The init files, in order: ~/.sqliterc then $XDG_CONFIG_HOME/redstone/redstonerc,
  * so ours wins on conflict. Missing files are not an error. */
 void shell_load_init(Shell *sh, const char *explicit_path);
 
 /* The REPL. Returns the process exit status. */
 int shell_run(Shell *sh);
 
-#endif /* SQLSH_SHELL_H */
+#endif /* REDSTONE_SHELL_H */

@@ -12,8 +12,8 @@
  * `.theme dump` round-trips and a shipped theme cannot drift from what the
  * parser accepts.
  */
-#ifndef SQLSH_THEME_H
-#define SQLSH_THEME_H
+#ifndef REDSTONE_THEME_H
+#define REDSTONE_THEME_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -104,7 +104,7 @@ bool theme_load(const char *name, FILE *err);
 /* The built-in palette names, NULL past the end. The first is "default". */
 const char *theme_name_at(size_t i);
 
-/* Default theme path: $XDG_CONFIG_HOME/sqlsh/theme, else ~/.config/sqlsh/
+/* Default theme path: $XDG_CONFIG_HOME/redstone/theme, else ~/.config/redstone/
  * theme. NULL when neither variable is set. The caller frees. */
 char *theme_path(void);
 
@@ -112,4 +112,4 @@ char *theme_path(void);
  * theme_apply, so it is a starting point for editing as well as a listing. */
 void theme_dump(FILE *out);
 
-#endif /* SQLSH_THEME_H */
+#endif /* REDSTONE_THEME_H */

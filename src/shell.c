@@ -123,7 +123,7 @@ Shell *shell_new(FILE *in, FILE *out, FILE *err)
     sh->out = out;
     sh->err = err;
     sh->explain = SHELL_EXPLAIN_AUTO;
-    sh->prompt_main = dup_str("sqlsh> ");
+    sh->prompt_main = dup_str("redstone> ");
     sh->prompt_cont = dup_str("   ...> ");
     if (sh->prompt_main == NULL || sh->prompt_cont == NULL) {
         shell_free(sh);
@@ -197,7 +197,8 @@ bool shell_conn_switch(Shell *sh, size_t i)
     Db *target;
 
     if (i >= SHELL_MAX_CONN) {
-        fprintf(sh->err, "sqlsh: connection number must be between 0 and %d\n", SHELL_MAX_CONN - 1);
+        fprintf(sh->err, "redstone: connection number must be between 0 and %d\n",
+                SHELL_MAX_CONN - 1);
         return false;
     }
     if (i == sh->conn_cur) {
@@ -220,11 +221,11 @@ bool shell_conn_switch(Shell *sh, size_t i)
 bool shell_conn_close(Shell *sh, size_t i)
 {
     if (i >= SHELL_MAX_CONN || sh->conn[i] == NULL) {
-        fprintf(sh->err, "sqlsh: no such connection: %u\n", (unsigned)i);
+        fprintf(sh->err, "redstone: no such connection: %u\n", (unsigned)i);
         return false;
     }
     if (i == sh->conn_cur) {
-        fprintf(sh->err, "sqlsh: cannot close the current connection\n");
+        fprintf(sh->err, "redstone: cannot close the current connection\n");
         return false;
     }
     db_close(sh->conn[i]);
@@ -298,7 +299,7 @@ bool shell_redirect(Shell *sh, const char *target, bool once)
         stream = fopen(target, "wb");
     }
     if (stream == NULL) {
-        fprintf(sh->err, "sqlsh: cannot write to %s\n", target);
+        fprintf(sh->err, "redstone: cannot write to %s\n", target);
         return false;
     }
     sh->redirect_name = dup_str(target);
@@ -395,7 +396,7 @@ bool shell_set_log(Shell *sh, const char *target)
         owned = true;
     }
     if (stream == NULL) {
-        fprintf(sh->err, "sqlsh: cannot open %s\n", target);
+        fprintf(sh->err, "redstone: cannot open %s\n", target);
         return false;
     }
     sh->log = stream;
@@ -414,7 +415,7 @@ bool shell_unsafe(Shell *sh, const char *name)
     if (!sh->flag[SHELL_SAFE]) {
         return false;
     }
-    fprintf(sh->err, "sqlsh: .%s is prohibited in safe mode\n", name);
+    fprintf(sh->err, "redstone: .%s is prohibited in safe mode\n", name);
     return true;
 }
 
@@ -603,7 +604,7 @@ bool shell_feed(Shell *sh, const char *text)
     }
 
     if (!buffer_append(&sh->stmt, text) || !buffer_append(&sh->stmt, "\n")) {
-        fputs("sqlsh: out of memory\n", sh->err);
+        fputs("redstone: out of memory\n", sh->err);
         shell_quit(sh, 1);
         return false;
     }
@@ -636,7 +637,7 @@ bool shell_source(Shell *sh, const char *path, bool complain)
 
     if (file == NULL) {
         if (complain) {
-            fprintf(sh->err, "sqlsh: cannot open %s\n", path);
+            fprintf(sh->err, "redstone: cannot open %s\n", path);
         }
         return false;
     }
@@ -657,7 +658,7 @@ bool shell_source(Shell *sh, const char *path, bool complain)
     return ok;
 }
 
-/* ~/.sqliterc for parity, then ours, so a setting in sqlshrc wins over the
+/* ~/.sqliterc for parity, then ours, so a setting in redstonerc wins over the
  * same setting in .sqliterc rather than the other way round. */
 void shell_load_init(Shell *sh, const char *explicit_path)
 {
@@ -675,11 +676,12 @@ void shell_load_init(Shell *sh, const char *explicit_path)
         }
     }
     if (xdg != NULL && xdg[0] != '\0') {
-        if (snprintf(path, sizeof(path), "%s/sqlsh/sqlshrc", xdg) < (int)sizeof(path)) {
+        if (snprintf(path, sizeof(path), "%s/redstone/redstonerc", xdg) < (int)sizeof(path)) {
             (void)shell_source(sh, path, false);
         }
     } else if (home != NULL && home[0] != '\0') {
-        if (snprintf(path, sizeof(path), "%s/.config/sqlsh/sqlshrc", home) < (int)sizeof(path)) {
+        if (snprintf(path, sizeof(path), "%s/.config/redstone/redstonerc", home) <
+            (int)sizeof(path)) {
             (void)shell_source(sh, path, false);
         }
     }
@@ -720,7 +722,7 @@ int shell_run(Shell *sh)
             break;
         }
         if (status == LINE_ERROR) {
-            fputs("sqlsh: input error\n", sh->err);
+            fputs("redstone: input error\n", sh->err);
             sh->status = 1;
             break;
         }
@@ -747,7 +749,7 @@ int shell_run(Shell *sh)
     }
 
     if (pending(sh)) {
-        fputs("sqlsh: incomplete statement at end of input\n", sh->err);
+        fputs("redstone: incomplete statement at end of input\n", sh->err);
         sh->status = 1;
     }
     if (hist_path != NULL) {

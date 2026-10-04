@@ -4,7 +4,7 @@
  * shipped in the amalgamation this project pins (see reference/shell.c). It is
  * public domain, like the rest of sqlite.
  *
- * It is copied rather than approximated for one reason: `sqlsh --compat` has
+ * It is copied rather than approximated for one reason: `redstone --compat` has
  * to align columns byte-for-byte the way sqlite3(1) does, and any table that
  * disagreed about one code point would show up as a parity failure. Treating
  * character width as a matter of opinion is how two "correct" implementations

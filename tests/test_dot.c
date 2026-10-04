@@ -185,7 +185,7 @@ static const char *test_split_limits(void)
  * Refusals and typos
  * ------------------------------------------------------------------------ */
 
-/* Every command sqlsh refuses. Each is refused for a named missing source
+/* Every command redstone refuses. Each is refused for a named missing source
  * file, never silently ignored, because a script that thinks .sha3sum ran is
  * worse off than one that stopped. */
 static const char *test_refusals(void)
@@ -336,7 +336,7 @@ static const char *test_import_csv_quoting(void)
                                    "\"line\nbreak\",y\n";
     Fix f;
     FILE *file;
-    char path[] = "/tmp/sqlsh-import-XXXXXX";
+    char path[] = "/tmp/redstone-import-XXXXXX";
     char cmd[128];
     char *text;
     int fd = mkstemp(path);
@@ -520,8 +520,8 @@ static const char *test_clear_writes_to_base_out(void)
 
 static const char *test_edit_sends_argument_to_editor(void)
 {
-    char script[] = "/tmp/sqlsh-test-editor-XXXXXX";
-    char capture[] = "/tmp/sqlsh-test-capture-XXXXXX";
+    char script[] = "/tmp/redstone-test-editor-XXXXXX";
+    char capture[] = "/tmp/redstone-test-capture-XXXXXX";
     int sfd = mkstemp(script);
     int cfd = mkstemp(capture);
     Fix f;
@@ -550,7 +550,8 @@ static const char *test_edit_sends_argument_to_editor(void)
     unsetenv("EDITOR");
 
     mu_assert(".edit with an argument should succeed", fed);
-    mu_assert(".edit should hand the argument text to the editor", got != NULL && has(got, "SELECT 1;"));
+    mu_assert(".edit should hand the argument text to the editor",
+              got != NULL && has(got, "SELECT 1;"));
     free(got);
     return NULL;
 }
@@ -563,8 +564,8 @@ static const char *test_edit_sends_argument_to_editor(void)
  * reproduce that shape. */
 static const char *test_edit_falls_back_to_history(void)
 {
-    char script[] = "/tmp/sqlsh-test-editor-XXXXXX";
-    char capture[] = "/tmp/sqlsh-test-capture-XXXXXX";
+    char script[] = "/tmp/redstone-test-editor-XXXXXX";
+    char capture[] = "/tmp/redstone-test-capture-XXXXXX";
     int sfd = mkstemp(script);
     int cfd = mkstemp(capture);
     Fix f;
@@ -595,7 +596,8 @@ static const char *test_edit_falls_back_to_history(void)
     unsetenv("EDITOR");
 
     mu_assert(".edit with no argument should succeed", fed);
-    mu_assert(".edit should fall back to the previous history entry", got != NULL && has(got, "SELECT 2;"));
+    mu_assert(".edit should fall back to the previous history entry",
+              got != NULL && has(got, "SELECT 2;"));
     free(got);
     return NULL;
 }
@@ -606,7 +608,7 @@ static const char *test_edit_falls_back_to_history(void)
  * editor that leaves no file behind for read_file to read back. */
 static const char *test_edit_reports_editor_failure(void)
 {
-    char script[] = "/tmp/sqlsh-test-editor-XXXXXX";
+    char script[] = "/tmp/redstone-test-editor-XXXXXX";
     int sfd = mkstemp(script);
     Fix f;
     char *err;
@@ -642,7 +644,8 @@ static const char *test_edit_reports_editor_failure(void)
 static const char *test_safe_mode_refuses(void)
 {
     static const char *const unsafe[] = {".open x.db",    ".shell echo hi",  ".system echo hi",
-                                         ".output f.txt", ".import f.csv t", ".load ext", ".edit x"};
+                                         ".output f.txt", ".import f.csv t", ".load ext",
+                                         ".edit x"};
     Fix f;
     size_t i;
 

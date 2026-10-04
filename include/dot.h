@@ -2,13 +2,13 @@
  * dot.h - the dot-command table.
  *
  * One table, one dispatch. Every command sqlite3(1) documents appears in it:
- * the 54 sqlsh implements and the 11 it refuses because they are backed by
+ * the 54 redstone implements and the 11 it refuses because they are backed by
  * extension sources this project deliberately does not vendor. A refusal is
  * an entry like any other, so `.help` can list it and completion can offer
  * it — the gap is documented rather than discovered.
  */
-#ifndef SQLSH_DOT_H
-#define SQLSH_DOT_H
+#ifndef REDSTONE_DOT_H
+#define REDSTONE_DOT_H
 
 #include "comp.h"
 #include "shell.h"
@@ -37,4 +37,4 @@ int dot_split(char *line, char **argv, int max);
  * sqlite3(1) does. */
 bool dot_boolean(Shell *sh, const char *text);
 
-#endif /* SQLSH_DOT_H */
+#endif /* REDSTONE_DOT_H */

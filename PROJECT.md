@@ -1,6 +1,6 @@
 ---
-title: "sqlsh — a drop-in SQLite shell with zsh-style completion"
-id: "sqlsh"
+title: "redstone — a drop-in SQLite shell with zsh-style completion"
+id: "redstone"
 status: waiting                # initiated | defined | in-research | in-progress | waiting | completed
 priority: medium              # critical | high | medium | low
 start_date: "2026-09-15"
@@ -14,20 +14,20 @@ blocks: []
 references:
   - "docs/ARCHITECTURE.md"
   - "docs/development-workflow.md"
-  - "docs/sqlsh.1"
+  - "docs/redstone.1"
   - "README.md"
   - "https://sqlite.org/c3ref/intro.html"
   - "https://sqlite.org/cli.html"
 notes: "Phases 0-8 complete and gate-green. Waiting on owner sign-off (Phase 8's one remaining manual check) and on the manual checks table."
 ---
 
-# sqlsh
+# redstone
 
 ## Overview
 
 **Purpose.** `sqlite3(1)` is a capable shell with a poor interactive surface: no
 completion worth the name, so every session involves recalling table names,
-column names and legal values from memory or from a second terminal. `sqlsh` is
+column names and legal values from memory or from a second terminal. `redstone` is
 a **drop-in replacement** for it — same dot commands, same output modes, same
 CLI flags — with two things added on top: **zsh-style completion**, where
 `<Tab>` opens a navigable menu of candidates drawn from the live schema and
@@ -52,7 +52,7 @@ to `sqlite3(1)`, never silently missing.
 
 **Goals**
 
-1. **Parity.** A user can alias `sqlite3` to `sqlsh` and not notice anything
+1. **Parity.** A user can alias `sqlite3` to `redstone` and not notice anything
    missing in ordinary work — same commands, same modes, same flags, same
    behaviour.
 2. **Completion.** Context-aware candidates wherever a known list exists: dot
@@ -73,7 +73,7 @@ to `sqlite3(1)`, never silently missing.
 - Every one of the 54 portable dot commands has a test or a parity check
   asserting its effect; every one of the 11 unsupported commands is refused
   with a useful message.
-- `sqlsh --compat` output is byte-identical to `sqlite3(1)` across the classic
+- `redstone --compat` output is byte-identical to `sqlite3(1)` across the classic
   mode matrix, verified by differential test in the gate.
 - `make gate` prints PASS: formatter, both builds, sanitized tests, cppcheck
   and clang-tidy clean, zero warnings.
@@ -300,7 +300,7 @@ database and runs SQL. No completion.
 *Automatic*
 
 - [✓] `make gate` → PASS
-- [✓] `sqlsh tests/test.db 'SELECT ...'` prints rows; exit 0
+- [✓] `redstone tests/test.db 'SELECT ...'` prints rows; exit 0
 - [✓] exit 1 on SQL error and on an incomplete statement at EOF
 - [✓] `make SQLITE=vendored` produces a binary with no `libsqlite3` linkage
 - [✓] `make valgrind` reports 0 errors
@@ -375,7 +375,7 @@ in raw mode after a crash is worse than no shell.
 - [x] `.editor emacs|vi` selects the keymap; the mode is shown in the prompt in
       vi mode
 - [x] history: in-memory ring, `↑` `↓`, deduplicated, persisted to
-      `$XDG_STATE_HOME/sqlsh/history` (default `~/.local/state/sqlsh/history`)
+      `$XDG_STATE_HOME/redstone/history` (default `~/.local/state/redstone/history`)
       with a bounded size
 - [x] redraw: prompt plus buffer, correct when the line exceeds terminal width;
       `SIGWINCH` sets a flag that triggers re-layout
@@ -437,9 +437,9 @@ in raw mode after a crash is worse than no shell.
   one-dependency constraint intact.
 
 - Decision: **XDG paths, with `~/.sqliterc` still honoured.** History at
-  `$XDG_STATE_HOME/sqlsh/history`, config and theme under
-  `$XDG_CONFIG_HOME/sqlsh/`. `~/.sqliterc` is read for parity (Phase 6),
-  followed by `~/.config/sqlsh/sqlshrc` so ours wins on conflict.
+  `$XDG_STATE_HOME/redstone/history`, config and theme under
+  `$XDG_CONFIG_HOME/redstone/`. `~/.sqliterc` is read for parity (Phase 6),
+  followed by `~/.config/redstone/redstonerc` so ours wins on conflict.
 
 **Dependencies** — Phase 0.
 
@@ -657,7 +657,7 @@ decides nothing about appearance.
 - [x] `make gate` → PASS
 - [x] **differential suite**: `tests/parity.sh` runs 8 fixture queries across
       the 13 classic modes, plus a headers-on/off pass, and diffs
-      `sqlsh --compat` byte-for-byte against `sqlite3(1)`. 112 checks, all
+      `redstone --compat` byte-for-byte against `sqlite3(1)`. 112 checks, all
       passing. Wired into the gate; skippable only with an explicit
       `SKIP_PARITY=1`.
 - [x] without `--compat`, output is box-formatted with headers — asserted
@@ -685,8 +685,8 @@ decides nothing about appearance.
   and a script that needs stability opts in explicitly.
   Alternatives: pretty only when stdout is a tty, which keeps pipes compatible
   automatically; always upstream with beauty opt-in.
-  Trade-offs: a script that pipes `sqlsh` without `--compat` sees box drawing
-  where it expected `|`-separated rows. Accepted deliberately — `sqlsh` is not
+  Trade-offs: a script that pipes `redstone` without `--compat` sees box drawing
+  where it expected `|`-separated rows. Accepted deliberately — `redstone` is not
   `sqlite3` unless asked to be, and the failure is loud rather than subtle.
   The differential suite guarantees `--compat` is exact.
 
@@ -771,7 +771,7 @@ command-line flags, and `main.c` reduced to argument parsing.
       argument-completion source — 75 rows, 63 implemented and 12 refused
 - [✓] the 54 portable commands of upstream's `.help`, plus the aliases it
       accepts but hides (`.ar` `.crnl` `.indices` `.limits` `.vfsinfo`) and
-      three of sqlsh's own (`.editor`, and Phase 7 adds `.theme`)
+      three of redstone's own (`.editor`, and Phase 7 adds `.theme`)
 - [✓] the 11 unsupported commands (`.archive`/`.ar` `.check` `.expert`
       `.imposter` `.intck` `.recover` `.scanstats` `.selftest` `.session`
       `.sha3sum` `.testcase`) recognised and refused with a message naming the
@@ -783,7 +783,7 @@ command-line flags, and `main.c` reduced to argument parsing.
       `-multiplex` and the five allocator-tuning flags are refused by name
       with the reason, on the same principle as the dot commands
 - [✓] `~/.sqliterc` read at startup for parity, then
-      `$XDG_CONFIG_HOME/sqlsh/sqlshrc` so ours wins on conflict; `-noinit`
+      `$XDG_CONFIG_HOME/redstone/redstonerc` so ours wins on conflict; `-noinit`
       skips both
 - [✓] dot-command and argument values are completable (Phase 3's
       `CTX_DOT_ARG` is fed by `dot_comp_source()`)
@@ -816,7 +816,7 @@ command-line flags, and `main.c` reduced to argument parsing.
 
 *Manual*
 
-- [ ] `alias sqlite3=sqlsh` for a day's work surfaces nothing missing
+- [ ] `alias sqlite3=redstone` for a day's work surfaces nothing missing
 
 **Design decisions**
 
@@ -844,7 +844,7 @@ command-line flags, and `main.c` reduced to argument parsing.
 | `.import` does not skip a UTF-8 BOM on the first field | Upstream does; the port did not carry it | Strip the BOM before importing |
 | `.import`'s duplicate-column renaming is an approximation | Upstream's `zAutoColumn` is a small SQL program that also chops redundant suffixes; ours appends `_N` | Name the columns in the CSV header |
 | `.import` has no `-esc`/`-qesc` backslash-escape option | Rarely used, and it interacts with every other quoting rule | `sqlite3(1)` |
-| `.vfslist` differs | The oracle binary registers `apndvfs`, which sqlsh deliberately does not vendor | None; the list is honest about what is linked |
+| `.vfslist` differs | The oracle binary registers `apndvfs`, which redstone deliberately does not vendor | None; the list is honest about what is linked |
 
 **Dependencies** — Phase 5 for `.mode`; Phase 3 for completable arguments.
 
@@ -864,9 +864,9 @@ code, which is the argument for the differential suite in one paragraph:
 - `shell_set_prompt` freed `sh->nonce`, an unrelated field, on every
   `.prompt`.
 
-The connection settings were a subtler one. `sqlsh` accepted `SELECT "foo"`
+The connection settings were a subtler one. `redstone` accepted `SELECT "foo"`
 where the oracle rejected it, because upstream compiles its own SQLite with
-`-DSQLITE_DQS=0` while sqlsh links a shared library that may be built either
+`-DSQLITE_DQS=0` while redstone links a shared library that may be built either
 way. `db.c` now applies the same `sqlite3_db_config` set upstream's `open_db`
 does — DQS off, defensive on, trusted-schema off — on the first open and on
 every `.open`, so the behaviour no longer depends on how the library was
@@ -905,8 +905,8 @@ it is typed, and none of the colour in the program is hardcoded any more.
       views and in-scope columns, coloured from the completion engine's caches
 - [x] unbalanced quote or paren shown as an error colour, which is also the
       cue for why the prompt is asking for a continuation line
-- [x] theme file at `$XDG_CONFIG_HOME/sqlsh/theme` (default
-      `~/.config/sqlsh/theme`): `[section]` headers over `key = value` lines,
+- [x] theme file at `$XDG_CONFIG_HOME/redstone/theme` (default
+      `~/.config/redstone/theme`): `[section]` headers over `key = value` lines,
       unknown sections, keys and values warned about and ignored, missing file
       means the built-in palette
 - [x] `.theme` dot command: dump, `list`, `reload`, `on`/`off`, or load a
@@ -966,7 +966,7 @@ it is typed, and none of the colour in the program is hardcoded any more.
   not files installed into `themes/`. The roadmap said "two built-in themes";
   what shipped is four, parsed by the same parser a user's file goes through.
   There is nothing to install, nothing to lose, and `theme_dump` round-trips —
-  `.theme > ~/.config/sqlsh/theme` is a working way to start editing one, and a
+  `.theme > ~/.config/redstone/theme` is a working way to start editing one, and a
   test asserts the round trip for every shipped palette.
 
 - Decision: **`#` comments a whole line only; `--` comments to end of line.**
@@ -992,14 +992,14 @@ deliberately postponed.
 **Tasks**
 
 - [✓] `README.md`: build, usage, keybindings, the parity table
-- [✓] `sqlsh(1)` man page (`docs/sqlsh.1`)
+- [✓] `redstone(1)` man page (`docs/redstone.1`)
 - [✓] `make valgrind` extended to cover the pty suite
 - [✓] input lines longer than the terminal width, verified under the pty
       (`test_pty_long_line_redraw`, `tests/test_line.c`: a 40-character line
       against a 20-column pty, edited at the far end from the cursor)
 - [✓] a fuzz target over the tokenizer run in CI-length batches (`make fuzz`,
       `tests/fuzz_tokenizer.c`, default `FUZZ_TIME=30`)
-- [✓] `make install` installs `sqlsh` and the man page only — never as, or
+- [✓] `make install` installs `redstone` and the man page only — never as, or
       symlinked to, `sqlite3`, which would shadow the binary the parity suite
       tests against
 - [✓] review the Deferred-work log; promote or close each entry
@@ -1042,7 +1042,7 @@ Phase 8.
 | Vi keybindings | Phase 1 planning | **Promoted** into Phase 1 — modality cannot be retrofitted cheaply. |
 | Vendoring the 11 extension-backed commands | Phase 6 planning | **Closed**, Phase 8 review. Phase 6 already ships refusal-with-message for all 11; vendoring them would mean owning tens of thousands of lines of `sqlar.c`/`zipfile.c`/etc. nobody here wrote, against the clean-room decision Phase 0 made. |
 | Multiple attached databases in completion scoping | Phase 0 planning | **Closed**, Phase 8 review, out of scope for v1. `sqlctx.c` would need schema-qualified name resolution across every attached database's live schema; no user request has surfaced needing it. |
-| Query result paging | Phase 0 planning | **Closed**, Phase 8 review. `reference/shell.c` has no pager feature at all under this or trunk versions of upstream — it was never a parity gap, only an early planning idea. `sqlsh ... \| less` already covers it externally. |
+| Query result paging | Phase 0 planning | **Closed**, Phase 8 review. `reference/shell.c` has no pager feature at all under this or trunk versions of upstream — it was never a parity gap, only an early planning idea. `redstone ... \| less` already covers it externally. |
 
 ## Manual checks outstanding
 
@@ -1052,10 +1052,10 @@ as phases land.
 
 | Phase | Check | How to reproduce |
 |---|---|---|
-| 5 | The default output is genuinely nicer to read than `sqlite3(1)`'s | `make && ./bin/sqlsh tests/test.db`, then `SELECT * FROM employees LIMIT 20;`. Compare against `sqlite3 tests/test.db` running the same query, and against `./bin/sqlsh --compat`. Check a NULL-heavy and a blob-heavy table too. |
-| 4 | The menu feels like zsh's: no flicker, correct placement near the bottom of the screen, readable columns | `make && ./bin/sqlsh tests/test.db`, then type `SELECT * FROM ` and press Tab. Repeat with the window scrolled so the prompt is on the last row, and with a narrow window. |
-| 6 | `alias sqlite3=sqlsh` for a day's work surfaces nothing missing | `make && alias sqlite3=$PWD/bin/sqlsh`, then use it for whatever the day brings. Anything that behaves differently from the real `sqlite3(1)` is a parity bug worth a line in the next phase. |
-| 7 | Colours are legible on both the owner's dark and light terminal profiles | `make && ./bin/sqlsh tests/test.db`, then type a statement mixing known and unknown names, e.g. `SELECT id, nosuch FROM employees WHERE 'x'`. Try `.theme dark`, `.theme light` and `.theme basic` under each terminal profile, and `.theme` to see the palette as a file. |
-| 6 | `-noinit` suppresses a `~/.sqliterc` that would otherwise be visible | Put `.mode box` in `~/.sqliterc`, run `./bin/sqlsh tests/test.db "SELECT 1;"` (box) and `./bin/sqlsh -noinit tests/test.db "SELECT 1;"` (list). Not automated: the suite will not plant files in a real `$HOME`. |
-| 5 | Resizing the terminal mid-session actually re-wraps the next result, live | `make && ./bin/sqlsh tests/test.db`, run a query with a wide row (`SELECT * FROM employees;`), then narrow the terminal window and re-run it without restarting `sqlsh`. The column shrinking should track the new width. Not automated: `ioctl(TIOCGWINSZ)` needs a real controlling terminal. |
-| 8 | Owner sign-off on `README.md` and `docs/sqlsh.1` | Read both; check they match how the shell actually behaves. Not automated by design — the check is a human judgement of the docs' quality and accuracy, not a scriptable property. |
+| 5 | The default output is genuinely nicer to read than `sqlite3(1)`'s | `make && ./bin/redstone tests/test.db`, then `SELECT * FROM employees LIMIT 20;`. Compare against `sqlite3 tests/test.db` running the same query, and against `./bin/redstone --compat`. Check a NULL-heavy and a blob-heavy table too. |
+| 4 | The menu feels like zsh's: no flicker, correct placement near the bottom of the screen, readable columns | `make && ./bin/redstone tests/test.db`, then type `SELECT * FROM ` and press Tab. Repeat with the window scrolled so the prompt is on the last row, and with a narrow window. |
+| 6 | `alias sqlite3=redstone` for a day's work surfaces nothing missing | `make && alias sqlite3=$PWD/bin/redstone`, then use it for whatever the day brings. Anything that behaves differently from the real `sqlite3(1)` is a parity bug worth a line in the next phase. |
+| 7 | Colours are legible on both the owner's dark and light terminal profiles | `make && ./bin/redstone tests/test.db`, then type a statement mixing known and unknown names, e.g. `SELECT id, nosuch FROM employees WHERE 'x'`. Try `.theme dark`, `.theme light` and `.theme basic` under each terminal profile, and `.theme` to see the palette as a file. |
+| 6 | `-noinit` suppresses a `~/.sqliterc` that would otherwise be visible | Put `.mode box` in `~/.sqliterc`, run `./bin/redstone tests/test.db "SELECT 1;"` (box) and `./bin/redstone -noinit tests/test.db "SELECT 1;"` (list). Not automated: the suite will not plant files in a real `$HOME`. |
+| 5 | Resizing the terminal mid-session actually re-wraps the next result, live | `make && ./bin/redstone tests/test.db`, run a query with a wide row (`SELECT * FROM employees;`), then narrow the terminal window and re-run it without restarting `redstone`. The column shrinking should track the new width. Not automated: `ioctl(TIOCGWINSZ)` needs a real controlling terminal. |
+| 8 | Owner sign-off on `README.md` and `docs/redstone.1` | Read both; check they match how the shell actually behaves. Not automated by design — the check is a human judgement of the docs' quality and accuracy, not a scriptable property. |

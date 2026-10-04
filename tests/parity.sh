@@ -2,16 +2,16 @@
 #
 # parity.sh - the differential output-parity suite.
 #
-# Runs the same queries through sqlsh --compat and through sqlite3(1) and
+# Runs the same queries through redstone --compat and through sqlite3(1) and
 # diffs the bytes. Parity is claimed only for the modes in MODES; the rest are
 # best-effort and are reported, not enforced (see docs/notes/phase5-output-
 # parity.md). A missing sqlite3 skips the suite rather than failing it, so the
 # gate still works outside the dev shell.
 #
-# usage: tests/parity.sh [path-to-sqlsh]
+# usage: tests/parity.sh [path-to-redstone]
 set -eu
 
-SQLSH=${1:-bin/sqlsh}
+REDSTONE=${1:-bin/redstone}
 SQLITE=${SQLITE3:-sqlite3}
 HERE=$(dirname "$0")
 
@@ -19,8 +19,8 @@ if ! command -v "$SQLITE" >/dev/null 2>&1; then
     echo "parity: sqlite3 not found, skipping"
     exit 0
 fi
-if [ ! -x "$SQLSH" ]; then
-    echo "parity: $SQLSH not built" >&2
+if [ ! -x "$REDSTONE" ]; then
+    echo "parity: $REDSTONE not built" >&2
     exit 1
 fi
 
@@ -51,7 +51,7 @@ for mode in $MODES; do
         [ -n "$q" ] || continue
         checks=$((checks + 1))
         "$SQLITE" "-$mode" "$db" "$q" > "$tmp/want" 2>"$tmp/want.err" || true
-        "$SQLSH" --compat "-$mode" "$db" "$q" > "$tmp/got" 2>"$tmp/got.err" || true
+        "$REDSTONE" --compat "-$mode" "$db" "$q" > "$tmp/got" 2>"$tmp/got.err" || true
         if ! cmp -s "$tmp/want" "$tmp/got"; then
             fail=$((fail + 1))
             echo "parity: MISMATCH mode=$mode query=$q"
@@ -95,7 +95,7 @@ while IFS= read -r dot; do
     [ -n "$dot" ] || continue
     checks=$((checks + 1))
     "$SQLITE" "$db" "$dot" > "$tmp/want" 2>&1 || true
-    "$SQLSH" --compat "$db" "$dot" > "$tmp/got" 2>&1 || true
+    "$REDSTONE" --compat "$db" "$dot" > "$tmp/got" 2>&1 || true
     if ! cmp -s "$tmp/want" "$tmp/got"; then
         fail=$((fail + 1))
         echo "parity: MISMATCH $dot"
@@ -109,7 +109,7 @@ done < "$tmp/dots"
 # restored schema lists its objects in the original order -- it does not, for
 # either shell, because .dump emits tables before indexes.
 checks=$((checks + 1))
-"$SQLSH" --compat "$db" ".dump" > "$tmp/got.sql" 2>/dev/null || true
+"$REDSTONE" --compat "$db" ".dump" > "$tmp/got.sql" 2>/dev/null || true
 "$SQLITE" "$db" ".dump" > "$tmp/want.sql" 2>/dev/null || true
 rm -f "$tmp/got.db" "$tmp/want.db"
 "$SQLITE" "$tmp/got.db" < "$tmp/got.sql" > /dev/null 2>&1 || true
@@ -133,7 +133,7 @@ for shell in want got; do
     rm -f "$tmp/imp.$shell.db"
 done
 "$SQLITE" "$tmp/imp.want.db" ".import --csv $tmp/round.csv t" ".dump" > "$tmp/want" 2>&1 || true
-"$SQLSH" --compat "$tmp/imp.got.db" ".import --csv $tmp/round.csv t" ".dump" > "$tmp/got" 2>&1 || true
+"$REDSTONE" --compat "$tmp/imp.got.db" ".import --csv $tmp/round.csv t" ".dump" > "$tmp/got" 2>&1 || true
 if ! cmp -s "$tmp/want" "$tmp/got"; then
     fail=$((fail + 1))
     echo "parity: MISMATCH .import csv round-trip"
@@ -145,7 +145,7 @@ for extra in "-header" "-noheader"; do
     for mode in box column list csv; do
         checks=$((checks + 1))
         "$SQLITE" "-$mode" "$extra" "$db" "SELECT * FROM nums;" > "$tmp/want" 2>/dev/null || true
-        "$SQLSH" --compat "-$mode" "$extra" "$db" "SELECT * FROM nums;" > "$tmp/got" 2>/dev/null || true
+        "$REDSTONE" --compat "-$mode" "$extra" "$db" "SELECT * FROM nums;" > "$tmp/got" 2>/dev/null || true
         if ! cmp -s "$tmp/want" "$tmp/got"; then
             fail=$((fail + 1))
             echo "parity: MISMATCH mode=$mode $extra"
