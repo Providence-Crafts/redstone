@@ -339,14 +339,20 @@ static const char *test_import_csv_quoting(void)
                                    "\"line\nbreak\",y\n";
     Fix f;
     FILE *file;
-    char path[] = "/tmp/redstone-import-XXXXXX";
-    char cmd[128];
+    char path[512];
+    char cmd[640];
     char *text;
-    int fd = mkstemp(path);
+    char *c;
 
-    mu_assert("mkstemp failed", fd >= 0);
-    file = fdopen(fd, "w");
-    mu_assert("fdopen failed", file != NULL);
+    mu_assert("temp file failed", plat_temp_file(path, sizeof(path), "redstone-import"));
+    /* Windows takes '/' too, and the dot-command argument stays unescaped. */
+    for (c = path; *c != '\0'; c++) {
+        if (*c == '\\') {
+            *c = '/';
+        }
+    }
+    file = fopen(path, "wb");
+    mu_assert("fopen failed", file != NULL);
     (void)fputs(csv, file);
     (void)fclose(file);
 

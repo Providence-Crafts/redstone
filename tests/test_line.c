@@ -861,11 +861,19 @@ static const char *test_pty_no_color(void)
     char capture[16384];
     bool detected_tty;
     bool plain;
+    const char *term;
+    char saved_term[128] = "";
 
     if (db == NULL) {
         return NULL;
     }
-    /* A pty is a terminal, so detection must turn colour on here ... */
+    /* A pty is a terminal, so detection must turn colour on here, given a TERM
+     * as a terminal emulator would set (CI runners set none) ... */
+    term = getenv("TERM");
+    if (term != NULL) {
+        (void)snprintf(saved_term, sizeof(saved_term), "%s", term);
+    }
+    (void)plat_setenv("TERM", "xterm-256color");
     (void)plat_unsetenv("NO_COLOR");
     theme_detect(pty.out);
     detected_tty = theme_colour();
@@ -881,6 +889,11 @@ static const char *test_pty_no_color(void)
     plain = !capture_has_sgr(capture);
 
     (void)plat_unsetenv("NO_COLOR");
+    if (saved_term[0] != '\0') {
+        (void)plat_setenv("TERM", saved_term);
+    } else {
+        (void)plat_unsetenv("TERM");
+    }
     theme_set_colour(false);
     pty_close(&pty);
     db_close(db);
