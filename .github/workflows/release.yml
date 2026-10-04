@@ -19,7 +19,7 @@ jobs:
   linux:
     runs-on: ubuntu-22.04 # older glibc, so the binary runs on more distributions
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: |
           curl -fsSLo sqlite.zip "$SQLITE_ZIP" && unzip -q sqlite.zip
           make CC=gcc SQLITE=vendored SQLITE_AMALGAMATION="$PWD/$SQLITE_DIR" release
@@ -36,7 +36,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
