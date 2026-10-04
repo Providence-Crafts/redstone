@@ -1,4 +1,8 @@
-# redstone
+<p align="center">
+  <img src="docs/logo.svg" width="160" alt="redstone ore block">
+</p>
+
+<h1 align="center">redstone</h1>
 
 A drop-in replacement for `sqlite3(1)` with zsh-style completion, live syntax
 highlighting, a colour theme system, and output worth looking at.
@@ -13,6 +17,21 @@ terminal-width-aware output by default.
 See `man redstone` (`docs/redstone.1`) for the full reference: every flag, every
 output mode, file locations, environment variables and exit status. This file
 is the tour.
+
+<p align="center"><img src="docs/demo.gif" alt="redstone demo: completion menu, box output, JSON mode" width="720"></p>
+
+## Install
+
+**Linux**: download `redstone-X.Y.Z-linux-x86_64.tar.gz` from the
+[releases](https://github.com/Providence-Crafts/redstone/releases), then put
+`redstone` on your `PATH` and `redstone.1` in your man path. SQLite is compiled in.
+
+**Windows**: `winget install ProvidenceCrafts.redstone`, or download
+`redstone-X.Y.Z-windows-x86_64.zip` from the releases and put `redstone.exe` on your
+`PATH`. It is a single static `.exe`, with SQLite compiled in and no runtime to install.
+
+**From source**: `nix build` gives `result/bin/redstone`. Without Nix, any C99
+compiler with `libsqlite3` works: `make release && make install PREFIX=~/.local`.
 
 ## Build
 
@@ -33,8 +52,18 @@ make install PREFIX=~/.local   # installs bin/redstone and the man page only, ne
 `make help` lists every target, including `valgrind`, `fuzz`, `tidy`,
 `cppcheck`, `compdb` and `watch`.
 
-Without Nix, `nix build` (using the flake's `packages.default`) produces the
-same release binary.
+The Windows build cross-compiles from Linux in its own shell and runs the
+tests under Wine:
+
+```sh
+nix develop .#windows
+make SQLITE=vendored release            # bin/redstone.exe, static
+make SQLITE=vendored MODE=release run-tests
+```
+
+CI (`.github/workflows/ci.yml`) runs the gate on Linux and a native MinGW build
+and tests on Windows. Pushing a `v*` tag publishes both release archives
+(`release.yml`).
 
 ## Usage
 
@@ -106,9 +135,10 @@ is byte-parity-tested against `sqlite3(1)`; the rest
 (`c count jatom jobject off psql qbox split tcl`) are best-effort. See
 `.help mode` for the option flags each one accepts.
 
-Colours come from `theme.c`'s theme file
-(`$XDG_CONFIG_HOME/redstone/theme`, default `~/.config/redstone/theme`), an INI file
-with `[menu]`, `[syntax]` and `[output]` sections. `.theme` with no argument
+Colours come from the theme file, an INI file with `[brand]`, `[menu]`,
+`[syntax]` and `[output]` sections. It lives at `$XDG_CONFIG_HOME/redstone/theme`
+(default `~/.config/redstone/theme`) on Linux and at `%APPDATA%\redstone\theme`
+on Windows. `.theme` with no argument
 prints the active palette in that same loadable format; `.theme dark|light|
 basic|no-color` or a file path loads another one. `NO_COLOR` and `TERM=dumb`
 turn colour and highlighting off regardless.
@@ -125,6 +155,19 @@ silently. `docs/notes/` and `PROJECT.md`'s "Known gaps" tables carry the
 complete, current list; the closest single-command summary is `.help` inside
 the shell, which marks each of the 11 unsupported commands as such.
 
+## Platforms
+
+Linux (x86_64, any glibc distribution) and Windows 10 1809 or later (Windows
+Terminal, `cmd.exe` and PowerShell consoles). Everything that differs lives in
+`src/plat_posix.c` and `src/plat_win32.c` behind `include/plat.h`. On Windows:
+
+- History is under `%LOCALAPPDATA%\redstone\`, not `~/.local/state/redstone/`.
+- `.shell`, `.system`, `.output |cmd` and `.edit` run through `cmd.exe`, so
+  their quoting is `cmd.exe`'s. The editor falls back to `notepad`.
+- The console is switched to UTF-8 and VT mode at start-up. Consoles older
+  than 1809 lack VT input and are not supported.
+- Output stays byte-exact: LF line endings, as on Linux.
+
 ## Development
 
 `PROJECT.md` is the full roadmap: architecture, phase-by-phase history, design
@@ -132,3 +175,7 @@ decisions and their rationale, the deferred-work log, and every outstanding
 manual check. `docs/ARCHITECTURE.md` covers the module layering in more
 depth; `docs/development-workflow.md` covers the day-to-day process this
 project follows.
+
+## License
+
+GPL-3.0; see `LICENSE`.
