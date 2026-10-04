@@ -1,12 +1,12 @@
 #include "db.h"
 
 #include "out.h"
+#include "plat.h"
 
 #include <sqlite3.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 /* An upper bound on the columns one statement may produce. sqlite's own
  * limit is lower, but a bound here keeps the per-row value array on the
@@ -717,18 +717,15 @@ const DbList *db_pragmas(Db *db)
 /* --- value completion --------------------------------------------------- */
 
 typedef struct {
-    struct timespec start;
-    long limit_ms;
+    long long start_ms;
+    long long limit_ms;
 } Deadline;
 
-static long elapsed_ms(const struct timespec *start)
+static long long elapsed_ms(long long start_ms)
 {
-    struct timespec now;
+    long long now;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
-        return 0;
-    }
-    return ((now.tv_sec - start->tv_sec) * 1000L) + ((now.tv_nsec - start->tv_nsec) / 1000000L);
+    return plat_monotonic_ms(&now) ? now - start_ms : 0;
 }
 
 /* Returning non-zero aborts the statement. This is the only thing standing
@@ -739,7 +736,7 @@ static int value_progress(void *arg)
 {
     const Deadline *dl = (const Deadline *)arg;
 
-    return elapsed_ms(&dl->start) > dl->limit_ms ? 1 : 0;
+    return elapsed_ms(dl->start_ms) > dl->limit_ms ? 1 : 0;
 }
 
 static DbList *value_query(sqlite3 *handle, const char *table, const char *column)
@@ -768,9 +765,8 @@ static DbList *value_query(sqlite3 *handle, const char *table, const char *colum
     }
 
     dl.limit_ms = DB_VALUE_MS;
-    if (clock_gettime(CLOCK_MONOTONIC, &dl.start) != 0) {
-        dl.start.tv_sec = 0;
-        dl.start.tv_nsec = 0;
+    if (!plat_monotonic_ms(&dl.start_ms)) {
+        dl.start_ms = 0;
         dl.limit_ms = -1; /* no usable clock: refuse rather than run unbounded */
     }
     sqlite3_progress_handler(handle, 200, value_progress, &dl);

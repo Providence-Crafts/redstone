@@ -13,6 +13,7 @@
 
 #include "db.h"
 #include "out.h"
+#include "plat.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -474,13 +475,14 @@ static char *format_schema(const char *sql, bool indent)
     }
     /* A view's or trigger's body is the author's own layout; reflowing it
      * would change the SQL inside, so upstream leaves both alone. */
-    if (strncasecmp(sql, "CREATE VIEW", 11) == 0 || strncasecmp(sql, "CREATE TRIG", 11) == 0) {
+    if (plat_strncasecmp(sql, "CREATE VIEW", 11) == 0 ||
+        plat_strncasecmp(sql, "CREATE TRIG", 11) == 0) {
         (void)str_puts(&out, sql);
         (void)str_putc(&out, ';');
         return out.data;
     }
-    is_index = strncasecmp(sql, "CREATE INDEX", 12) == 0 ||
-               strncasecmp(sql, "CREATE UNIQUE INDEX", 19) == 0;
+    is_index = plat_strncasecmp(sql, "CREATE INDEX", 12) == 0 ||
+               plat_strncasecmp(sql, "CREATE UNIQUE INDEX", 19) == 0;
     z = dup_str(sql);
     if (z == NULL) {
         return NULL;
@@ -540,10 +542,10 @@ static char *format_schema(const char *sql, bool indent)
                 j = 0u;
             }
         } else if ((c == 'w' || c == 'W') && nparen == 0 && is_index &&
-                   strncasecmp("WHERE", &z[i], 5) == 0 && !is_alnum(z[i + 5u])) {
+                   plat_strncasecmp("WHERE", &z[i], 5) == 0 && !is_alnum(z[i + 5u])) {
             is_where = true;
         } else if (is_where && (c == 'a' || c == 'A') && nparen == 0 &&
-                   strncasecmp("AND", &z[i], 3) == 0 && !is_alnum(z[i + 3u])) {
+                   plat_strncasecmp("AND", &z[i], 3) == 0 && !is_alnum(z[i + 3u])) {
             (void)str_add(&out, z, j);
             (void)str_puts(&out, "\n    ");
             j = 0u;
@@ -1409,7 +1411,7 @@ static void collate_clause(Shell *sh, const char *parent, const char *parent_col
         !db_column_collation(shell_db(sh), child, child_col, cseq, sizeof(cseq))) {
         return;
     }
-    if (strcasecmp(pseq, cseq) != 0) {
+    if (plat_strcasecmp(pseq, cseq) != 0) {
         (void)str_puts(out, " COLLATE ");
         (void)str_puts(out, pseq);
     }

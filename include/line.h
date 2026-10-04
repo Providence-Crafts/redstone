@@ -38,6 +38,14 @@ const char *line_text(const Line *ln);
  * decoration and no history. */
 bool line_interactive(const Line *ln);
 
+/* Terminal width in columns, re-read from the tty; a fallback when it cannot be. */
+unsigned line_columns(Line *ln);
+
+/* Columns a prompt occupies on screen: escape sequences take none and a wide
+ * or multi-byte character is counted by cells, not bytes. The cursor is placed
+ * by this, so a coloured or glyph-bearing prompt needs it to line up. */
+size_t line_prompt_width(const char *prompt);
+
 /* Force interactive on or off, for -interactive and -batch. */
 void line_set_interactive(Line *ln, bool on);
 

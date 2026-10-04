@@ -12,45 +12,14 @@
  * `.theme dump` round-trips and a shipped theme cannot drift from what the
  * parser accepts.
  */
-#ifndef REDSTONE_THEME_H
-#define REDSTONE_THEME_H
+#ifndef THEME_H
+#define THEME_H
+
+#include "theme_slots.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
-
-typedef enum {
-    THEME_RESET = 0,
-    /* [menu] */
-    THEME_SELECTED, /* the highlighted menu row */
-    THEME_MATCH,    /* the prefix the user has already typed */
-    THEME_DETAIL,   /* the description column */
-    THEME_GROUP,    /* a group header */
-    THEME_NOTE,     /* counts, truncation notices */
-    THEME_VALUE,    /* a column value offered as a candidate */
-    /* [syntax]: schema objects, token kinds, and the error cue */
-    THEME_TABLE,
-    THEME_VIEW,
-    THEME_COLUMN,
-    THEME_FUNCTION,
-    THEME_PRAGMA,
-    THEME_KEYWORD,
-    THEME_DOT,
-    THEME_NUMBER,
-    THEME_COMMENT,
-    THEME_OPERATOR,
-    THEME_PARAM,
-    THEME_IDENT, /* a bare name the schema does not know */
-    THEME_ERROR, /* unclosed quote, unbalanced paren */
-    /* [output]: result values, by storage class, plus the column titles */
-    THEME_HEADER,
-    THEME_NULL,
-    THEME_INTEGER,
-    THEME_REAL,
-    THEME_STRING, /* also a string literal in the input line */
-    THEME_BLOB,
-    THEME_STYLE_COUNT
-} ThemeStyle;
 
 /* Decide from the environment and the stream: colour is off when NO_COLOR is
  * set to anything non-empty, when TERM is absent or "dumb", or when OUT is not
@@ -104,12 +73,14 @@ bool theme_load(const char *name, FILE *err);
 /* The built-in palette names, NULL past the end. The first is "default". */
 const char *theme_name_at(size_t i);
 
-/* Default theme path: $XDG_CONFIG_HOME/redstone/theme, else ~/.config/redstone/
- * theme. NULL when neither variable is set. The caller frees. */
+/* Default theme path: <plat_config_dir>/<THEME_PROGRAM>/theme, i.e.
+ * $XDG_CONFIG_HOME/<program>/theme or ~/.config/<program>/theme, and
+ * %APPDATA%/<program>/theme on Windows. NULL when no config dir is known.
+ * The caller frees. */
 char *theme_path(void);
 
 /* Write the current palette as a theme file. What comes out is accepted by
  * theme_apply, so it is a starting point for editing as well as a listing. */
 void theme_dump(FILE *out);
 
-#endif /* REDSTONE_THEME_H */
+#endif /* THEME_H */

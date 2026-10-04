@@ -8,13 +8,13 @@
  */
 #include "shell.h"
 
+#include "brand.h"
 #include "dot.h"
 #include "out.h"
+#include "plat.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <sys/resource.h>
-#include <sys/time.h>
 
 /* Growable line accumulator for multi-line statements. */
 typedef struct {
@@ -39,6 +39,8 @@ struct Shell {
     ShellExplain explain;
     char *prompt_main;
     char *prompt_cont;
+    bool branded; /* the main prompt is brand_prompt(), not prompt_main */
+    char brand_buf[160];
 
     FILE *log;
     bool log_owned;
@@ -275,7 +277,7 @@ bool shell_redirect(Shell *sh, const char *target, bool once)
 
     if (sh->redirect != NULL) {
         if (sh->redirect_pipe) {
-            (void)pclose(sh->redirect);
+            (void)plat_pclose(sh->redirect);
         } else {
             (void)fclose(sh->redirect);
         }
@@ -291,10 +293,7 @@ bool shell_redirect(Shell *sh, const char *target, bool once)
 
     pipe_target = target[0] == '|';
     if (pipe_target) {
-        /* ".output |CMD" is a documented sqlite3(1) feature; shell_unsafe
-         * rejects it under -safe. */
-        /* NOLINTNEXTLINE(cert-env33-c) */
-        stream = popen(target + 1, "w");
+        stream = plat_popen_write(target + 1);
     } else {
         stream = fopen(target, "wb");
     }
@@ -305,7 +304,7 @@ bool shell_redirect(Shell *sh, const char *target, bool once)
     sh->redirect_name = dup_str(target);
     if (sh->redirect_name == NULL) {
         if (pipe_target) {
-            (void)pclose(stream);
+            (void)plat_pclose(stream);
         } else {
             (void)fclose(stream);
         }
@@ -351,6 +350,7 @@ void shell_set_prompt(Shell *sh, const char *main_prompt, const char *continuati
     char *copy;
 
     if (main_prompt != NULL) {
+        sh->branded = false;
         copy = dup_str(main_prompt);
         if (copy != NULL) {
             free(sh->prompt_main);
@@ -364,6 +364,11 @@ void shell_set_prompt(Shell *sh, const char *main_prompt, const char *continuati
             sh->prompt_cont = copy;
         }
     }
+}
+
+void shell_set_branded(Shell *sh, bool on)
+{
+    sh->branded = on;
 }
 
 const char *shell_prompt(const Shell *sh, bool continuation)
@@ -450,37 +455,11 @@ int shell_status(const Shell *sh)
  * Running statements
  * ------------------------------------------------------------------------ */
 
-typedef struct {
-    struct timeval wall;
-    struct timeval user;
-    struct timeval sys;
-} Clocks;
-
-static void clocks_read(Clocks *c)
-{
-    struct rusage ru;
-
-    (void)gettimeofday(&c->wall, NULL);
-    if (getrusage(RUSAGE_SELF, &ru) == 0) {
-        c->user = ru.ru_utime;
-        c->sys = ru.ru_stime;
-    } else {
-        c->user.tv_sec = c->user.tv_usec = 0;
-        c->sys.tv_sec = c->sys.tv_usec = 0;
-    }
-}
-
-static double elapsed(const struct timeval *start, const struct timeval *end)
-{
-    return (double)(end->tv_sec - start->tv_sec) +
-           ((double)(end->tv_usec - start->tv_usec) / 1.0e6);
-}
-
 /* sqlite3(1)'s wording, so a script that greps "Run Time" keeps working. */
-static void report_time(FILE *out, const Clocks *start, const Clocks *end)
+static void report_time(FILE *out, const PlatClock *start, const PlatClock *end)
 {
-    fprintf(out, "Run Time: real %.3f user %f sys %f\n", elapsed(&start->wall, &end->wall),
-            elapsed(&start->user, &end->user), elapsed(&start->sys, &end->sys));
+    fprintf(out, "Run Time: real %.3f user %f sys %f\n", end->wall - start->wall,
+            end->user - start->user, end->sys - start->sys);
 }
 
 /* True for a statement that begins with EXPLAIN but not EXPLAIN QUERY PLAN:
@@ -543,8 +522,8 @@ bool shell_exec(Shell *sh, const char *sql)
     FILE *dest = shell_out(sh);
     char saved_mode[32];
     bool explaining;
-    Clocks start;
-    Clocks end;
+    PlatClock start;
+    PlatClock end;
     bool ok;
 
     explaining =
@@ -554,7 +533,7 @@ bool shell_exec(Shell *sh, const char *sql)
         fprintf(dest, "%s\n", sql);
     }
     if (sh->flag[SHELL_TIMER]) {
-        clocks_read(&start);
+        plat_clock(&start);
     }
 
     if (sh->flag[SHELL_EQP] && !is_explain(sql)) {
@@ -571,7 +550,7 @@ bool shell_exec(Shell *sh, const char *sql)
     }
 
     if (sh->flag[SHELL_TIMER]) {
-        clocks_read(&end);
+        plat_clock(&end);
         report_time(sh->out, &start, &end);
     }
     if (sh->flag[SHELL_CHANGES]) {
@@ -662,35 +641,29 @@ bool shell_source(Shell *sh, const char *path, bool complain)
  * same setting in .sqliterc rather than the other way round. */
 void shell_load_init(Shell *sh, const char *explicit_path)
 {
-    const char *home = getenv("HOME");
-    const char *xdg = getenv("XDG_CONFIG_HOME");
+    char *home;
+    char *config;
     char path[1024];
 
     if (explicit_path != NULL) {
         (void)shell_source(sh, explicit_path, true);
         return;
     }
-    if (home != NULL && home[0] != '\0') {
-        if (snprintf(path, sizeof(path), "%s/.sqliterc", home) < (int)sizeof(path)) {
-            (void)shell_source(sh, path, false);
-        }
+    home = plat_home_dir();
+    if (home != NULL && snprintf(path, sizeof(path), "%s/.sqliterc", home) < (int)sizeof(path)) {
+        (void)shell_source(sh, path, false);
     }
-    if (xdg != NULL && xdg[0] != '\0') {
-        if (snprintf(path, sizeof(path), "%s/redstone/redstonerc", xdg) < (int)sizeof(path)) {
-            (void)shell_source(sh, path, false);
-        }
-    } else if (home != NULL && home[0] != '\0') {
-        if (snprintf(path, sizeof(path), "%s/.config/redstone/redstonerc", home) <
-            (int)sizeof(path)) {
-            (void)shell_source(sh, path, false);
-        }
+    free(home);
+    config = plat_config_dir();
+    if (config != NULL &&
+        snprintf(path, sizeof(path), "%s/redstone/redstonerc", config) < (int)sizeof(path)) {
+        (void)shell_source(sh, path, false);
     }
+    free(config);
 }
 
 /* In vi mode the prompt says which state the editor is in, because an editor
  * with hidden modes is the thing people hate about vi bindings. */
-/* cppcheck-suppress constParameterPointer ; the parameter cannot be const:
- * the accessor hands out a mutable part of the session. */
 static const char *prompt_for(Shell *sh)
 {
     if (!sh->flag[SHELL_INTERACTIVE]) {
@@ -701,6 +674,11 @@ static const char *prompt_for(Shell *sh)
     }
     if (line_keymap(sh->ln) == EDIT_VI) {
         return line_vi_state(sh->ln) == EDIT_VI_NORMAL ? "[n] " : "[i] ";
+    }
+    if (sh->branded) {
+        /* Rebuilt each time, so a `.theme` change shows on the next prompt. */
+        brand_prompt(sh->brand_buf, sizeof(sh->brand_buf));
+        return sh->brand_buf;
     }
     return sh->prompt_main;
 }

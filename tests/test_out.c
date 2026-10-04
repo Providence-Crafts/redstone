@@ -10,6 +10,7 @@
  */
 #include "minunit.h"
 #include "out.h"
+#include "plat.h"
 #include "suites.h"
 
 #include <stdlib.h>
@@ -38,10 +39,10 @@ static char *save_env(const char *name)
 static void restore_env(const char *name, char *saved)
 {
     if (saved != NULL) {
-        setenv(name, saved, 1);
+        plat_setenv(name, saved);
         free(saved);
     } else {
-        unsetenv(name);
+        plat_unsetenv(name);
     }
 }
 
@@ -721,9 +722,9 @@ static const char *box_border_locale_body(void)
     Out *out;
     char *got;
 
-    mu_assert("setenv LC_ALL failed", setenv("LC_ALL", "C", 1) == 0);
-    mu_assert("setenv LC_CTYPE failed", setenv("LC_CTYPE", "C", 1) == 0);
-    mu_assert("setenv LANG failed", setenv("LANG", "C", 1) == 0);
+    mu_assert("setenv LC_ALL failed", plat_setenv("LC_ALL", "C") == 0);
+    mu_assert("setenv LC_CTYPE failed", plat_setenv("LC_CTYPE", "C") == 0);
+    mu_assert("setenv LANG failed", plat_setenv("LANG", "C") == 0);
     out = out_new(NULL);
     mu_assert("out_new failed", out != NULL);
     mu_assert("bad mode name", out_set_mode(out, "box"));
@@ -737,7 +738,7 @@ static const char *box_border_locale_body(void)
     free(got);
     out_free(out);
 
-    mu_assert("setenv LC_ALL failed", setenv("LC_ALL", "en_US.UTF-8", 1) == 0);
+    mu_assert("setenv LC_ALL failed", plat_setenv("LC_ALL", "en_US.UTF-8") == 0);
     out = out_new(NULL);
     mu_assert("out_new failed", out != NULL);
     mu_assert("bad mode name", out_set_mode(out, "box"));

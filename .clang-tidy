@@ -65,7 +65,7 @@ Checks: >
   -bugprone-multi-level-implicit-pointer-conversion
 
 WarningsAsErrors: ''
-HeaderFilterRegex: 'sqlite-cli/(include|src|tests)/[^/]*\.h$'
+HeaderFilterRegex: 'redstone/(include|src|tests)/[^/]*\.h$'
 FormatStyle: file
 CheckOptions:
   - key: readability-implicit-bool-conversion.AllowPointerConditions

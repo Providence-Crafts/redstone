@@ -1,13 +1,12 @@
 #include "out.h"
 
+#include "plat.h"
 #include "theme.h"
 #include "width.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
 /* Upstream's defaults for the four limits, so that `--limits on` means the
  * same thing here as there. */
@@ -982,7 +981,7 @@ static const Border g_column = {"  ",
  * does not ask, so the fallback is suppressed in compat mode: matching
  * sqlite3(1) byte for byte matters more than a tidy screen on a terminal that
  * asked for ASCII. */
-static bool utf8_locale(void)
+bool out_utf8_locale(void)
 {
     const char *const names[] = {"LC_ALL", "LC_CTYPE", "LANG"};
     size_t i;
@@ -995,14 +994,14 @@ static bool utf8_locale(void)
                    strstr(v, "UTF8") != NULL || strstr(v, "utf-8") != NULL;
         }
     }
-    return false;
+    return plat_utf8_default();
 }
 
 static const Border *border_for(const Out *o)
 {
     switch (o->style) {
     case ST_BOX:
-        return o->compat || utf8_locale() ? &g_box : &g_table;
+        return o->compat || out_utf8_locale() ? &g_box : &g_table;
     case ST_TABLE:
         return o->border ? &g_table : &g_plain;
     case ST_MARKDOWN:
@@ -1318,19 +1317,14 @@ static void layout(const Out *o, char *const *titles, size_t *widths, size_t *na
  * cache this: re-probing on every result is what makes a live resize work. */
 static unsigned resolve_screen_width(const Out *o)
 {
-    struct winsize ws;
+    unsigned cols;
 
     if (!o->screen_auto) {
         return o->screen;
     }
-    if (o->stream != NULL && ioctl(fileno(o->stream), TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-        return ws.ws_col;
-    }
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-        return ws.ws_col;
-    }
-    if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-        return ws.ws_col;
+    if (plat_term_size(o->stream, &cols, NULL) || plat_term_size(stdin, &cols, NULL) ||
+        plat_term_size(stderr, &cols, NULL)) {
+        return cols;
     }
     return 80u;
 }

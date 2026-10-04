@@ -39,6 +39,24 @@
           buildFlags = [ "release" ];
         };
 
+        # Windows cross-build for local checks: `nix develop .#windows`, then
+        # `make SQLITE=vendored release` gives a static bin/redstone.exe and
+        # `make SQLITE=vendored MODE=release run-tests` runs the unit tests
+        # under Wine. Releases are built on the GitHub Actions Windows runner.
+        devShells.windows = pkgs.pkgsCross.mingwW64.mkShell {
+          nativeBuildInputs = [ pkgs.gnumake pkgs.sqlite pkgs.wine64 ];
+          # gcc's win32 thread model links mcfgthread; the cross wrapper
+          # only finds it when it is a target dependency of the shell.
+          buildInputs = [ pkgs.pkgsCross.mingwW64.windows.mcfgthreads ];
+          env = {
+            WINDOWS = "1";
+            CC = "x86_64-w64-mingw32-gcc";
+            TEST_WRAPPER = "wine";
+            WINEDEBUG = "-all";
+            SQLITE_AMALGAMATION = "${sqliteAmalgamation}";
+          };
+        };
+
         devShells.default = pkgs.mkShell {
           # nix's cc-wrapper injects -D_FORTIFY_SOURCE=2, which glibc turns
           # into a #warning at the -O0 the debug and compile_commands builds

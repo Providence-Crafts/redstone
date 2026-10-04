@@ -16,12 +16,12 @@
 
 #include "import.h"
 #include "out.h"
+#include "plat.h"
 #include "schema.h"
 #include "theme.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 /* --------------------------------------------------------------------------
  * Argument handling
@@ -370,7 +370,7 @@ static bool cmd_cd(Shell *sh, int argc, char **argv)
         usage_error(sh, ".cd DIRECTORY");
         return false;
     }
-    if (chdir(argv[1]) != 0) {
+    if (plat_chdir(argv[1]) != 0) {
         fprintf(shell_err(sh), "redstone: cannot change to %s\n", argv[1]);
         return false;
     }

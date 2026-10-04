@@ -6,12 +6,14 @@
  * that a statement behaves the same whether it arrives from a terminal, from
  * `.read`, from `~/.sqliterc` or from a `-cmd` argument.
  */
+#include "brand.h"
 #include "comp.h"
 #include "db.h"
 #include "dot.h"
 #include "hl.h"
 #include "line.h"
 #include "out.h"
+#include "plat.h"
 #include "shell.h"
 #include "theme.h"
 
@@ -19,7 +21,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #define REDSTONE_VERSION "0.1.0"
 
@@ -317,6 +318,8 @@ int main(int argc, char **argv)
     LineCompleter completer;
     HlSchema highlighter;
 
+    plat_init(&argc, &argv);
+
     /* First pass: the flags that have to be known before the database is
      * opened, plus the position of the database name and of the first SQL
      * argument. Nothing here can depend on the connection. */
@@ -376,7 +379,7 @@ int main(int argc, char **argv)
      * re-read the width on every result so a live resize is honoured. A
      * later --compat undoes this (out_set_compat turns it back off), and
      * piped output never had a tty to size against, so it is inert there. */
-    out_set_auto_screen_width(db_out(db), isatty(fileno(stdout)) == 1);
+    out_set_auto_screen_width(db_out(db), plat_isatty(stdout));
 
     ln = line_new(stdin, stdout);
     if (ln == NULL) {
@@ -459,7 +462,12 @@ int main(int argc, char **argv)
             }
         }
     } else if (status == 0 && !shell_quitting(sh)) {
-        if (line_interactive(ln)) {
+        if (line_interactive(ln) && !out_is_compat(db_out(db))) {
+            shell_set_branded(sh, true);
+            brand_banner(stdout, line_columns(ln), REDSTONE_VERSION);
+            printf("Connected to %s\n", db_path(db));
+            fputs("Enter SQL, or .help for commands, or .quit to exit.\n", stdout);
+        } else if (line_interactive(ln)) {
             printf("redstone %s connected to %s\n", REDSTONE_VERSION, db_path(db));
             fputs("Enter SQL, or .help for commands, or .quit to exit.\n", stdout);
         }

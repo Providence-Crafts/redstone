@@ -41,6 +41,9 @@ static const char *all_tests(void)
     if (msg == NULL) {
         msg = hl_suite();
     }
+    if (msg == NULL) {
+        msg = brand_suite();
+    }
     return msg;
 }
 

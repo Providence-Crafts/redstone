@@ -184,7 +184,7 @@ static const char *test_external_edit_chord(void)
 
     mu_assert("edit_new failed", ed != NULL);
     feed(ed, "select 1");
-    (void)edit_feed(ed, 0x18); /* Ctrl-X */
+    (void)edit_feed(ed, 0x18);   /* Ctrl-X */
     chord = edit_feed(ed, 0x05); /* Ctrl-E */
     edit_reset(ed);
     feed(ed, "x");

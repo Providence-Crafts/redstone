@@ -11,6 +11,14 @@ endif
 STD = -std=c99
 
 TARGET_NAME = redstone
+
+# Windows: native (MSYS2 sets OS=Windows_NT) or cross-compiled (make WINDOWS=1).
+# The source needs no feature-test macro there, and SQLite needs no pthread/dl.
+ifneq ($(filter Windows_NT,$(OS))$(WINDOWS),)
+  EXE = .exe
+  WINDOWS = 1
+endif
+TARGET = $(TARGET_NAME)$(EXE)
 BIN_DIR   = bin
 SRC_DIR   = src
 INC_DIR   = include
@@ -67,7 +75,11 @@ ifeq ($(SQLITE),vendored)
 containing sqlite3.c and sqlite3.h. Enter the nix devShell, or set it by hand)
   endif
   SQLITE_CFLAGS = -I$(SQLITE_AMALGAMATION)
-  SQLITE_LIBS   = -lpthread -ldl -lm
+  ifeq ($(WINDOWS),1)
+    SQLITE_LIBS = -lm
+  else
+    SQLITE_LIBS = -lpthread -ldl -lm
+  endif
   SQLITE_OBJ    = $(BUILD_DIR)/vendor/sqlite3.o
   # Trim the amalgamation to what a shell actually needs.
   SQLITE_AMALGAMATION_CFLAGS = \
@@ -115,14 +127,26 @@ endif
 # sigaction, plus posix_openpt/grantpt/ptsname for the pty test harness.
 # Defined here rather than in the sources so no translation unit has to declare
 # a reserved identifier of its own.
-FEATURE_FLAGS = -D_XOPEN_SOURCE=700
+ifeq ($(WINDOWS),1)
+  FEATURE_FLAGS =
+else
+  FEATURE_FLAGS = -D_XOPEN_SOURCE=700
+endif
 
 # -Isrc so tests can reach internal headers without a separate compile of the
 # same translation units.
 INCLUDES = -I$(INC_DIR) -I$(SRC_DIR) $(SQLITE_CFLAGS)
 
 CFLAGS  = $(STD) $(FEATURE_FLAGS) $(WARNING_FLAGS) $(INCLUDES) $(MODE_CFLAGS)
-LDFLAGS = $(MODE_LDFLAGS)
+# Windows releases link statically so the .exe needs no MinGW runtime DLLs.
+ifeq ($(WINDOWS),1)
+  LDFLAGS_EXTRA ?= -static
+endif
+LDFLAGS = $(MODE_LDFLAGS) $(LDFLAGS_EXTRA)
+
+# Runs the test binary: empty natively, `wine` when cross-compiled.
+TEST_WRAPPER ?=
+TEST_RUNNER = $(BUILD_DIR)/tests/test_runner$(EXE)
 
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
@@ -146,14 +170,14 @@ all: debug
 release debug asan msan:
 	@$(MAKE) --no-print-directory MODE=$@ binary
 
-binary: $(BIN_DIR)/$(TARGET_NAME)
+binary: $(BIN_DIR)/$(TARGET)
 
 # The binary is built per mode and copied to bin/, so bin/redstone always reflects
 # the mode that was built last rather than whichever object happened to be new.
-$(BIN_DIR)/$(TARGET_NAME): $(BUILD_DIR)/$(TARGET_NAME) | $(BIN_DIR)
+$(BIN_DIR)/$(TARGET): $(BUILD_DIR)/$(TARGET) | $(BIN_DIR)
 	cp -f $< $@
 
-$(BUILD_DIR)/$(TARGET_NAME): $(OBJS) $(SQLITE_OBJ)
+$(BUILD_DIR)/$(TARGET): $(OBJS) $(SQLITE_OBJ)
 	$(CC) $(OBJS) $(SQLITE_OBJ) -o $@ $(LDFLAGS) $(SQLITE_LIBS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
@@ -176,11 +200,11 @@ test:
 
 # The completion tests read tests/test.db, so it is a prerequisite rather than
 # something the developer has to remember to build.
-run-tests: $(BUILD_DIR)/tests/test_runner $(TEST_DIR)/test.db
+run-tests: $(TEST_RUNNER) $(TEST_DIR)/test.db
 	@echo "Running test suite ($(MODE))..."
-	@ASAN_OPTIONS="detect_leaks=1:abort_on_error=1" ./$(BUILD_DIR)/tests/test_runner
+	@ASAN_OPTIONS="detect_leaks=1:abort_on_error=1" $(TEST_WRAPPER) ./$(TEST_RUNNER)
 
-$(BUILD_DIR)/tests/test_runner: $(filter-out $(BUILD_DIR)/main.o, $(OBJS)) \
+$(TEST_RUNNER): $(filter-out $(BUILD_DIR)/main.o, $(OBJS)) \
                                 $(TEST_OBJS) $(SQLITE_OBJ) | $(BUILD_DIR)/tests
 	$(CC) $(filter %.o, $^) -o $@ $(LDFLAGS) $(SQLITE_LIBS)
 
@@ -222,7 +246,7 @@ endif
 
 valgrind: debug fixtures $(BUILD_DIR)/tests/test_runner
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
-	         --error-exitcode=1 ./$(BIN_DIR)/$(TARGET_NAME) $(TEST_DIR)/test.db \
+	         --error-exitcode=1 ./$(BIN_DIR)/$(TARGET) $(TEST_DIR)/test.db \
 	         'SELECT * FROM employees LIMIT 3;'
 	# The unit suite runs uninstrumented here rather than under `make test`'s
 	# ASan+UBSan build: both ASan and valgrind intercept malloc, and running
@@ -308,8 +332,8 @@ format-check:
 # Differential output-parity suite against sqlite3(1) (see tests/parity.sh).
 # Skips cleanly when sqlite3 is absent; SKIP_PARITY=1 skips it unconditionally
 # for whoever needs to run the gate without it.
-parity: $(BIN_DIR)/$(TARGET_NAME)
-	sh $(TEST_DIR)/parity.sh $(BIN_DIR)/$(TARGET_NAME)
+parity: $(BIN_DIR)/$(TARGET)
+	sh $(TEST_DIR)/parity.sh $(BIN_DIR)/$(TARGET)
 
 # One command, one verdict. This is the phase gate: a phase is not done until
 # `make gate` prints PASS. Every step below fails the build on any finding, so
@@ -351,7 +375,7 @@ watch:
 # ------------------------------------------------------------------------------
 
 install: release
-	install -Dm755 $(BIN_DIR)/$(TARGET_NAME) $(DESTDIR)$(PREFIX)/bin/$(TARGET_NAME)
+	install -Dm755 $(BIN_DIR)/$(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 	install -Dm644 docs/redstone.1 $(DESTDIR)$(PREFIX)/share/man/man1/redstone.1
 
 $(BIN_DIR) $(BUILD_DIR) $(BUILD_DIR)/tests $(BUILD_DIR)/vendor:

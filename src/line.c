@@ -2,16 +2,11 @@
 
 #include "hl.h"
 #include "menu.h"
+#include "plat.h"
+#include "width.h"
 
-#include <errno.h>
-#include <poll.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <termios.h>
-#include <unistd.h>
 
 #define LINE_CHUNK 128u
 
@@ -35,10 +30,8 @@ static char *dup_str(const char *s)
 struct Line {
     FILE *in;
     FILE *out;
-    int infd;
     bool tty;
     bool raw;
-    struct termios saved;
 
     Edit *edit;
     unsigned cols; /* terminal width, refreshed on SIGWINCH */
@@ -54,49 +47,9 @@ struct Line {
     bool highlight;
 };
 
-/* The one live instance, so the atexit hook and the signal handlers can restore
- * the terminal. A shell edits one line at a time; a registry would be ceremony.
- *
- * Only the two fields the handler touches are kept separately, as
- * sig_atomic_t/plain scalars: a handler must not chase pointers into a struct
- * that the main flow may be reallocating. */
+/* The one live instance, so the atexit hook can restore the terminal. A shell
+ * edits one line at a time; a registry would be ceremony. */
 static Line *g_line = NULL;
-static volatile sig_atomic_t g_raw_fd = -1;
-static struct termios g_saved_termios;
-static volatile sig_atomic_t g_winch = 0;
-
-/* Async-signal-safe: tcsetattr and _exit are both on the POSIX list. The
- * terminal is restored first, then the default disposition re-raises the signal
- * so the process dies with the right status. */
-static void restore_on_signal(int sig)
-{
-    if (g_raw_fd >= 0) {
-        (void)tcsetattr((int)g_raw_fd, TCSADRAIN, &g_saved_termios);
-        g_raw_fd = -1;
-    }
-    (void)signal(sig, SIG_DFL);
-    (void)raise(sig);
-}
-
-static void note_winch(int sig)
-{
-    (void)sig;
-    g_winch = 1;
-}
-
-/* SIGINT is deliberately absent: raw mode disables ISIG, so Ctrl-C reaches the
- * editor as a byte. These are the signals that would otherwise kill the process
- * with the terminal still in raw mode. */
-static void install_handlers(void)
-{
-    static const int fatal[] = {SIGTERM, SIGQUIT, SIGHUP, SIGSEGV, SIGABRT};
-    size_t i;
-
-    for (i = 0u; i < sizeof(fatal) / sizeof(fatal[0]); i++) {
-        (void)signal(fatal[i], restore_on_signal);
-    }
-    (void)signal(SIGWINCH, note_winch);
-}
 
 /* ------------------------------------------------------------------------
  * Raw mode
@@ -107,43 +60,18 @@ static void raw_off(Line *ln)
     if (ln == NULL || !ln->raw) {
         return;
     }
-    (void)tcsetattr(ln->infd, TCSADRAIN, &ln->saved);
-    g_raw_fd = -1;
+    plat_raw_leave();
     ln->raw = false;
-}
-
-static void restore_at_exit(void)
-{
-    raw_off(g_line);
 }
 
 static bool raw_on(Line *ln)
 {
-    struct termios raw;
-
     if (ln->raw) {
         return true;
     }
-    if (!ln->tty || tcgetattr(ln->infd, &ln->saved) != 0) {
+    if (!ln->tty || !plat_raw_enter(ln->in)) {
         return false;
     }
-    raw = ln->saved;
-    /* No canonical input, no echo, no signal or flow-control interception: the
-     * editor sees every byte, including Ctrl-C and Ctrl-S, and decides. */
-    raw.c_iflag &= (tcflag_t) ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    raw.c_oflag &= (tcflag_t) ~(OPOST);
-    raw.c_cflag |= (tcflag_t)CS8;
-    raw.c_lflag &= (tcflag_t) ~(ECHO | ICANON | IEXTEN | ISIG);
-    raw.c_cc[VMIN] = 1;
-    raw.c_cc[VTIME] = 0;
-
-    /* TCSADRAIN, not TCSAFLUSH: the latter discards whatever the user has
-     * already typed, which loses pasted input and type-ahead. */
-    if (tcsetattr(ln->infd, TCSADRAIN, &raw) != 0) {
-        return false;
-    }
-    g_saved_termios = ln->saved;
-    g_raw_fd = ln->infd;
     ln->raw = true;
     return true;
 }
@@ -161,8 +89,7 @@ Line *line_new(FILE *in, FILE *out)
     }
     ln->in = in;
     ln->out = out;
-    ln->infd = fileno(in);
-    ln->tty = ln->infd >= 0 && isatty(ln->infd) == 1 && isatty(fileno(out)) == 1;
+    ln->tty = plat_isatty(in) && plat_isatty(out);
     ln->edit = edit_new();
     ln->menu = menu_new();
     if (ln->edit == NULL || ln->menu == NULL) {
@@ -173,8 +100,6 @@ Line *line_new(FILE *in, FILE *out)
     }
     if (g_line == NULL) {
         g_line = ln;
-        (void)atexit(restore_at_exit);
-        install_handlers();
     }
     return ln;
 }
@@ -287,11 +212,12 @@ const char *line_text(const Line *ln)
 
 static void update_cols(Line *ln)
 {
-    struct winsize ws;
+    unsigned cols;
+    unsigned rows = 0u;
 
-    if (ioctl(ln->infd, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-        ln->cols = ws.ws_col;
-        ln->trows = ws.ws_row > 0 ? ws.ws_row : LINE_ROWS_FALLBACK;
+    if (plat_term_size(ln->in, &cols, &rows)) {
+        ln->cols = cols;
+        ln->trows = rows > 0u ? rows : LINE_ROWS_FALLBACK;
         return;
     }
     if (ln->cols == 0u) {
@@ -320,20 +246,44 @@ static void draw_menu(Line *ln)
     ln->menu_rows = rows;
 }
 
+size_t line_prompt_width(const char *prompt)
+{
+    size_t cells = 0u;
+
+    while (*prompt != '\0') {
+        size_t used = width_vt100(prompt);
+
+        if (*prompt == '\x1b' && used > 0u) {
+            prompt += used;
+        } else {
+            uint32_t c = width_decode(prompt, &used);
+
+            cells += width_char(c);
+            prompt += used;
+        }
+    }
+    return cells;
+}
+
+unsigned line_columns(Line *ln)
+{
+    update_cols(ln);
+    return ln->cols;
+}
+
 /* Keep the visible window on the part of the line the cursor is in. Scrolling
  * horizontally rather than wrapping keeps the prompt on one row, which is what
  * makes the completion menu in Phase 4 a simple region below it. */
 static void refresh(Line *ln, const char *prompt)
 {
     const char *buf = edit_buffer(ln->edit);
-    size_t plen = strlen(prompt);
+    size_t plen = line_prompt_width(prompt);
     size_t len = edit_len(ln->edit);
     size_t curs = edit_cursor(ln->edit);
     size_t avail;
     size_t start = 0u;
 
-    if (g_winch != 0) {
-        g_winch = 0;
+    if (plat_resized()) {
         update_cols(ln);
     }
     if (ln->cols == 0u) {
@@ -581,19 +531,6 @@ static LineStatus read_plain(Line *ln)
  * spawn happens here because edit.c performs no I/O.
  * ---------------------------------------------------------------------- */
 
-static const char *editor_command(void)
-{
-    const char *cmd = getenv("VISUAL");
-
-    if (cmd == NULL || cmd[0] == '\0') {
-        cmd = getenv("EDITOR");
-    }
-    if (cmd == NULL || cmd[0] == '\0') {
-        cmd = "vi";
-    }
-    return cmd;
-}
-
 static bool write_file(const char *path, const char *buf, size_t len)
 {
     FILE *fp = fopen(path, "w");
@@ -641,38 +578,29 @@ static char *read_file(const char *path)
  * suspend/restore dance. */
 char *line_external_edit(const char *text, size_t len)
 {
-    const char *tmpdir = getenv("TMPDIR");
     char path[1024];
-    int fd;
+    const char *editor = plat_default_editor();
     char *cmd;
     char *result;
     size_t need;
 
-    if (tmpdir == NULL || tmpdir[0] == '\0') {
-        tmpdir = "/tmp";
-    }
-    if ((size_t)snprintf(path, sizeof(path), "%s/redstone-edit-XXXXXX", tmpdir) >= sizeof(path)) {
+    if (!plat_temp_file(path, sizeof(path), "redstone-edit")) {
         return NULL;
     }
-    fd = mkstemp(path);
-    if (fd < 0) {
-        return NULL;
-    }
-    (void)close(fd);
     if (!write_file(path, text, len)) {
-        (void)unlink(path);
+        (void)remove(path);
         return NULL;
     }
 
-    need = strlen(editor_command()) + strlen(path) + 4u;
+    need = strlen(editor) + strlen(path) + 4u;
     cmd = (char *)malloc(need);
-    if (cmd != NULL && (size_t)snprintf(cmd, need, "%s \"%s\"", editor_command(), path) < need) {
+    if (cmd != NULL && (size_t)snprintf(cmd, need, "%s \"%s\"", editor, path) < need) {
         (void)system(cmd);
     }
     free(cmd);
 
     result = read_file(path);
-    (void)unlink(path);
+    (void)remove(path);
     return result;
 }
 
@@ -745,20 +673,10 @@ static LineStatus apply(Line *ln, EditAction act, const char *prompt, bool *done
     }
 }
 
-/* True when another byte is already on its way. EINTR is treated as "keep
- * waiting" so a window resize does not turn an arrow key into an Esc. */
+/* True when another byte is already on its way. */
 static bool more_input(const Line *ln)
 {
-    struct pollfd pfd;
-    int ready;
-
-    pfd.fd = ln->infd;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-    do {
-        ready = poll(&pfd, (nfds_t)1, LINE_ESC_MS);
-    } while (ready < 0 && errno == EINTR);
-    return ready > 0;
+    return plat_input_ready(ln->in, LINE_ESC_MS);
 }
 
 static LineStatus read_raw(Line *ln, const char *prompt)
@@ -776,12 +694,9 @@ static LineStatus read_raw(Line *ln, const char *prompt)
     refresh(ln, prompt);
 
     while (!done) {
-        ssize_t n = read(ln->infd, &byte, 1u);
+        int n = plat_read_byte(ln->in, &byte);
 
         if (n < 0) {
-            if (errno == EINTR) {
-                continue; /* a resize or a caught signal is not an error */
-            }
             return LINE_ERROR;
         }
         if (n == 0) {
@@ -853,24 +768,14 @@ static char *join_path(const char *dir, const char *rest)
 
 char *line_history_path(void)
 {
-    const char *state = getenv("XDG_STATE_HOME");
-    const char *home;
-    char *base;
+    char *dir = plat_state_dir();
     char *path;
 
-    if (state != NULL && state[0] != '\0') {
-        return join_path(state, "redstone/history");
-    }
-    home = getenv("HOME");
-    if (home == NULL || home[0] == '\0') {
+    if (dir == NULL) {
         return NULL;
     }
-    base = join_path(home, ".local/state");
-    if (base == NULL) {
-        return NULL;
-    }
-    path = join_path(base, "redstone/history");
-    free(base);
+    path = join_path(dir, "redstone/history");
+    free(dir);
     return path;
 }
 
@@ -891,7 +796,7 @@ static void make_parents(const char *path)
             continue;
         }
         *slash = '\0';
-        (void)mkdir(copy, 0700);
+        (void)plat_mkdir(copy);
         *slash = '/';
     }
     free(copy);

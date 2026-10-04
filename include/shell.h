@@ -92,6 +92,9 @@ ShellExplain shell_explain(const Shell *sh);
 void shell_set_prompt(Shell *sh, const char *main_prompt, const char *continuation);
 const char *shell_prompt(const Shell *sh, bool continuation);
 
+/* Use the branded main prompt (brand.h) until `.prompt` replaces it. */
+void shell_set_branded(Shell *sh, bool on);
+
 /* `.log`. TARGET is a file name, "stdout", "stderr", or NULL for off. */
 bool shell_set_log(Shell *sh, const char *target);
 const char *shell_log_name(const Shell *sh);

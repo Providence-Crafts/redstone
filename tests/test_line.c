@@ -8,20 +8,24 @@
 #include "hl.h"
 #include "line.h"
 #include "minunit.h"
+#include "plat.h"
 #include "suites.h"
 #include "theme.h"
 
 #include <ctype.h>
-#include <fcntl.h>
-#include <poll.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef _WIN32
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#endif
 
 /* --- the non-tty path -------------------------------------------------- */
 
@@ -93,6 +97,10 @@ static const char *test_plain_is_not_interactive(void)
     mu_assert("a pipe must not be interactive", ok);
     return NULL;
 }
+
+/* The pty path is POSIX only: the Windows console has no pty to open. The
+ * Windows editor is covered by the manual checks in PROJECT.md. */
+#ifndef _WIN32
 
 /* --- the pty path ------------------------------------------------------ */
 
@@ -858,11 +866,11 @@ static const char *test_pty_no_color(void)
         return NULL;
     }
     /* A pty is a terminal, so detection must turn colour on here ... */
-    (void)unsetenv("NO_COLOR");
+    (void)plat_unsetenv("NO_COLOR");
     theme_detect(pty.out);
     detected_tty = theme_colour();
     /* ... and NO_COLOR must override that. */
-    (void)setenv("NO_COLOR", "1", 1);
+    (void)plat_setenv("NO_COLOR", "1");
     theme_detect(pty.out);
 
     /* The highlighter installed by comp_pty_open runs on this line too, so
@@ -872,7 +880,7 @@ static const char *test_pty_no_color(void)
     pty_capture(&pty, capture, sizeof(capture));
     plain = !capture_has_sgr(capture);
 
-    (void)unsetenv("NO_COLOR");
+    (void)plat_unsetenv("NO_COLOR");
     theme_set_colour(false);
     pty_close(&pty);
     db_close(db);
@@ -881,6 +889,8 @@ static const char *test_pty_no_color(void)
     mu_assert("NO_COLOR must suppress every SGR sequence", plain);
     return NULL;
 }
+
+#endif /* !_WIN32 */
 
 /* --- history file ------------------------------------------------------ */
 
@@ -940,13 +950,13 @@ static const char *test_history_path(void)
     char *path;
     bool ok;
 
-    if (setenv("XDG_STATE_HOME", "/tmp/redstone-state", 1) != 0) {
+    if (plat_setenv("XDG_STATE_HOME", "/tmp/redstone-state") != 0) {
         return NULL;
     }
     path = line_history_path();
     ok = path != NULL && strcmp(path, "/tmp/redstone-state/redstone/history") == 0;
     free(path);
-    (void)unsetenv("XDG_STATE_HOME");
+    (void)plat_unsetenv("XDG_STATE_HOME");
 
     mu_assert("XDG_STATE_HOME not honoured", ok);
     return NULL;
@@ -956,6 +966,7 @@ const char *line_suite(void)
 {
     mu_run_test(test_plain_reads);
     mu_run_test(test_plain_is_not_interactive);
+#ifndef _WIN32
     mu_run_test(test_pty_editing);
     mu_run_test(test_pty_interrupt_and_eof);
     mu_run_test(test_pty_restores_termios);
@@ -973,6 +984,7 @@ const char *line_suite(void)
     mu_run_test(test_pty_arrows_cycle_candidates);
     mu_run_test(test_pty_highlight);
     mu_run_test(test_pty_no_color);
+#endif
     mu_run_test(test_history_roundtrip);
     mu_run_test(test_history_missing_file);
     mu_run_test(test_history_path);

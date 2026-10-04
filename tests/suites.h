@@ -16,5 +16,6 @@ const char *width_suite(void);
 const char *dot_suite(void);
 const char *theme_suite(void);
 const char *hl_suite(void);
+const char *brand_suite(void);
 
 #endif /* REDSTONE_TEST_SUITES_H */

@@ -17,6 +17,7 @@
 #include "line.h"
 #include "minunit.h"
 #include "out.h"
+#include "plat.h"
 #include "shell.h"
 #include "sqlctx.h"
 #include "suites.h"
@@ -119,6 +120,7 @@ static bool has(const char *text, const char *needle)
     return text != NULL && strstr(text, needle) != NULL;
 }
 
+#ifndef _WIN32 /* only the POSIX-only .edit tests need it */
 /* Reads PATH fully into a NUL-terminated buffer the caller frees, or NULL on
  * any failure. Used to see what .edit's capture-script editor received. */
 static char *read_whole_file(const char *path)
@@ -148,6 +150,7 @@ static char *read_whole_file(const char *path)
     fclose(f);
     return buf;
 }
+#endif
 
 /* --------------------------------------------------------------------------
  * Argument splitting
@@ -472,6 +475,10 @@ static const char *test_lint_fkey_indexes(void)
  * .edit / .clear
  * ------------------------------------------------------------------------ */
 
+/* The .edit tests stand in a #!/bin/sh script for the editor, which cmd.exe
+ * cannot run; on Windows .edit is covered by the manual checks instead. */
+#ifndef _WIN32
+
 /* Writes a shell script to PATH that copies its $1 argument (the temp file
  * .edit hands the editor) to CAPTURE, so a test can see what text .edit
  * actually sent out without needing a real editor. */
@@ -501,6 +508,8 @@ static bool write_delete_editor(const char *path)
     return chmod(path, 0700) == 0;
 }
 
+#endif
+
 static const char *test_clear_writes_to_base_out(void)
 {
     Fix f;
@@ -518,6 +527,7 @@ static const char *test_clear_writes_to_base_out(void)
     return NULL;
 }
 
+#ifndef _WIN32
 static const char *test_edit_sends_argument_to_editor(void)
 {
     char script[] = "/tmp/redstone-test-editor-XXXXXX";
@@ -535,8 +545,8 @@ static const char *test_edit_sends_argument_to_editor(void)
         close(cfd);
     }
     mu_assert("setup failed", sfd >= 0 && cfd >= 0 && write_capture_editor(script, capture));
-    unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
-    setenv("EDITOR", script, 1);
+    plat_unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
+    plat_setenv("EDITOR", script);
 
     mu_assert("fixture failed", fix_open(&f));
     fed = shell_feed(f.sh, ".edit SELECT 1;");
@@ -547,7 +557,7 @@ static const char *test_edit_sends_argument_to_editor(void)
     got = read_whole_file(capture);
     unlink(script);
     unlink(capture);
-    unsetenv("EDITOR");
+    plat_unsetenv("EDITOR");
 
     mu_assert(".edit with an argument should succeed", fed);
     mu_assert(".edit should hand the argument text to the editor",
@@ -579,8 +589,8 @@ static const char *test_edit_falls_back_to_history(void)
         close(cfd);
     }
     mu_assert("setup failed", sfd >= 0 && cfd >= 0 && write_capture_editor(script, capture));
-    unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
-    setenv("EDITOR", script, 1);
+    plat_unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
+    plat_setenv("EDITOR", script);
 
     mu_assert("fixture failed", fix_open(&f));
     mu_assert("history setup failed", line_history_add(shell_line(f.sh), "SELECT 2;"));
@@ -593,7 +603,7 @@ static const char *test_edit_falls_back_to_history(void)
     got = read_whole_file(capture);
     unlink(script);
     unlink(capture);
-    unsetenv("EDITOR");
+    plat_unsetenv("EDITOR");
 
     mu_assert(".edit with no argument should succeed", fed);
     mu_assert(".edit should fall back to the previous history entry",
@@ -619,14 +629,14 @@ static const char *test_edit_reports_editor_failure(void)
     }
     mu_assert("setup failed", sfd >= 0 && write_delete_editor(script));
 
-    unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
-    setenv("EDITOR", script, 1);
+    plat_unsetenv("VISUAL"); /* $VISUAL, if set, would win over $EDITOR */
+    plat_setenv("EDITOR", script);
     mu_assert("fixture failed", fix_open(&f));
     fed = shell_feed(f.sh, ".edit SELECT 1;");
     discard(f.out);
     err = drain(f.err);
     fix_close(&f);
-    unsetenv("EDITOR");
+    plat_unsetenv("EDITOR");
     unlink(script);
 
     mu_assert(".edit should fail when the editor leaves no file behind", !fed);
@@ -634,6 +644,7 @@ static const char *test_edit_reports_editor_failure(void)
     free(err);
     return NULL;
 }
+#endif
 
 /* --------------------------------------------------------------------------
  * Safe mode
@@ -705,9 +716,11 @@ const char *dot_suite(void)
     mu_run_test(test_dump_replays);
     mu_run_test(test_lint_fkey_indexes);
     mu_run_test(test_clear_writes_to_base_out);
+#ifndef _WIN32
     mu_run_test(test_edit_sends_argument_to_editor);
     mu_run_test(test_edit_falls_back_to_history);
     mu_run_test(test_edit_reports_editor_failure);
+#endif
     mu_run_test(test_safe_mode_refuses);
     mu_run_test(test_table_arg_completion);
     return NULL;

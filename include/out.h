@@ -59,6 +59,9 @@ void out_set_pretty(Out *out);
 void out_set_compat(Out *out);
 bool out_is_compat(const Out *out);
 
+/* Does the locale name a UTF-8 charset, so box-drawing characters will render? */
+bool out_utf8_locale(void);
+
 void out_set_headers(Out *out, bool on);
 bool out_headers(const Out *out);
 void out_set_colsep(Out *out, const char *sep);

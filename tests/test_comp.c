@@ -9,6 +9,7 @@
  */
 #include "comp.h"
 #include "minunit.h"
+#include "plat.h"
 #include "suites.h"
 
 #include <sqlite3.h>
@@ -82,12 +83,9 @@ static Db *open_fixture(void)
 
 static long monotonic_ms(void)
 {
-    struct timespec ts;
+    long long ms;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-        return 0;
-    }
-    return (ts.tv_sec * 1000L) + (ts.tv_nsec / 1000000L);
+    return plat_monotonic_ms(&ms) ? (long)ms : 0;
 }
 
 /* --- introspection ------------------------------------------------------ */

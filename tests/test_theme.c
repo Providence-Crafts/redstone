@@ -6,6 +6,7 @@
  * mysterious difference rather than as a failure here.
  */
 #include "minunit.h"
+#include "plat.h"
 #include "suites.h"
 #include "theme.h"
 
@@ -222,16 +223,23 @@ static const char *test_theme_path(void)
 {
     char *path;
 
-    mu_assert("setenv", setenv("XDG_CONFIG_HOME", "/tmp/xdg", 1) == 0);
+    mu_assert("setenv", plat_setenv("XDG_CONFIG_HOME", "/tmp/xdg") == 0);
     path = theme_path();
     mu_assert("XDG_CONFIG_HOME must be honoured",
               path != NULL && strcmp(path, "/tmp/xdg/redstone/theme") == 0);
     free(path);
-    mu_assert("unsetenv", unsetenv("XDG_CONFIG_HOME") == 0);
-    mu_assert("setenv", setenv("HOME", "/tmp/home", 1) == 0);
+    mu_assert("unsetenv", plat_unsetenv("XDG_CONFIG_HOME") == 0);
+#ifdef _WIN32
+    mu_assert("setenv", plat_setenv("APPDATA", "C:\\Users\\u\\AppData\\Roaming") == 0);
+    path = theme_path();
+    mu_assert("APPDATA must be the fallback, with forward slashes",
+              path != NULL && strcmp(path, "C:/Users/u/AppData/Roaming/redstone/theme") == 0);
+#else
+    mu_assert("setenv", plat_setenv("HOME", "/tmp/home") == 0);
     path = theme_path();
     mu_assert("HOME must be the fallback",
               path != NULL && strcmp(path, "/tmp/home/.config/redstone/theme") == 0);
+#endif
     free(path);
     return NULL;
 }

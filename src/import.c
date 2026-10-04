@@ -10,12 +10,12 @@
 
 #include "db.h"
 #include "out.h"
+#include "plat.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <unistd.h>
 
 /* strdup is not C99, and the project builds with -std=c99 strictly. */
 static char *dup_str(const char *s)
@@ -363,7 +363,7 @@ static bool dedup_names(char **names, int n, Str *coldefs, Str *renamed)
         char *built = NULL;
 
         for (j = 0; j < n; j++) {
-            if (strcasecmp(names[i], names[j]) == 0) {
+            if (plat_strcasecmp(names[i], names[j]) == 0) {
                 count++;
             }
         }
@@ -372,7 +372,7 @@ static bool dedup_names(char **names, int n, Str *coldefs, Str *renamed)
             char suffix[32];
             Str full = {NULL, 0u, 0u};
 
-            snprintf(suffix, sizeof(suffix), "_%0*d", width, i + 1);
+            (void)snprintf(suffix, sizeof(suffix), "_%0*d", width < 20 ? width : 20, i + 1);
             if (!str_append(&full, names[i]) || !str_append(&full, suffix)) {
                 str_free(&full);
                 return false;
@@ -734,13 +734,8 @@ bool import_cmd_import(Shell *sh, int argc, char **argv)
  * (and possibly an extension it sniffs, for .csv/.html). */
 static bool make_temp_path(char *buf, size_t bufsize, const char *tag, const char *ext)
 {
-    const char *dir = getenv("TMPDIR");
-    int n;
+    int n = snprintf(buf, bufsize, "%s/redstone-%s-%lu.%s", plat_temp_dir(), tag, plat_pid(), ext);
 
-    if (dir == NULL || dir[0] == '\0') {
-        dir = "/tmp";
-    }
-    n = snprintf(buf, bufsize, "%s/redstone-%s-%ld.%s", dir, tag, (long)getpid(), ext);
     return n > 0 && (size_t)n < bufsize;
 }
 
@@ -791,17 +786,8 @@ static void out_restore(Out *out, OutSaved *saved)
 static void launch_opener(Shell *sh, const char *path)
 {
     char cmd[600];
-    int n = snprintf(cmd, sizeof(cmd), "xdg-open '%s'", path);
 
-    if (n <= 0 || (size_t)n >= sizeof(cmd)) {
-        fprintf(shell_err(sh), "redstone: temp file path too long to open\n");
-        return;
-    }
-    /* .excel and .www exist to hand the file to the desktop's opener; -safe
-     * refuses both before a temporary file is even named. The path is one we
-     * built ourselves under the temp directory, not user text. */
-    /* NOLINTNEXTLINE(cert-env33-c,clang-analyzer-optin.taint.GenericTaint) */
-    if (system(cmd) != 0) {
+    if (plat_open_file(path, cmd, sizeof(cmd)) != 0) {
         fprintf(shell_err(sh), "redstone: failed: [%s]\n", cmd);
     }
 }

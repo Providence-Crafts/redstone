@@ -355,7 +355,7 @@ static const char *test_fuzz_offsets(void)
         ":p @q $r ?9 ?",
     };
     static const char alphabet[] = " \t\n'\"`[]()-/*.,;=<>?:@$abcxyzABCXYZ0123_";
-    unsigned long seed = 20260916uL;
+    unsigned long long seed = 20260916uLL;
     size_t i;
     size_t iter;
 
@@ -378,10 +378,10 @@ static const char *test_fuzz_offsets(void)
         size_t k;
         size_t c;
 
-        seed = (seed * 6364136223846793005uL) + 1442695040888963407uL;
+        seed = (seed * 6364136223846793005uLL) + 1442695040888963407uLL;
         len = (size_t)((seed >> 33) % (sizeof(buf) - 1u));
         for (k = 0u; k < len; k++) {
-            seed = (seed * 6364136223846793005uL) + 1442695040888963407uL;
+            seed = (seed * 6364136223846793005uLL) + 1442695040888963407uLL;
             buf[k] = alphabet[(seed >> 33) % (sizeof(alphabet) - 1u)];
         }
         buf[len] = '\0';
