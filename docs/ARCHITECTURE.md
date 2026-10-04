@@ -27,7 +27,21 @@ Non-goals, stated so they are not accidentally pursued:
   documented rather than discovered. See `PROJECT.md` Phase 6.
 - A complete SQL parser. Completion needs to know *where the cursor is*, not
   what the query means.
-- Windows support. POSIX termios is assumed throughout.
+
+## Platform layer
+
+Linux and Windows 10 1809+ are both supported. Everything that differs between
+them (raw terminal input, terminal size and resize, config and state paths,
+child processes, clocks, case-insensitive compare, environment writes) sits
+behind `include/plat.h`. `src/plat_posix.c` and `src/plat_win32.c` each guard
+their whole body with `_WIN32`, so both files compile everywhere and exactly
+one contributes code. No other file includes a terminal, path, process or
+clock header. `main` calls `plat_init(&argc, &argv)` first. On Windows that
+puts the console into UTF-8 and VT mode, sets stdio to binary so output stays
+byte-exact, and rebuilds `argv` as UTF-8 from the wide command line.
+
+Windows builds use the vendored amalgamation and link statically. The
+assessment and the decisions behind this design are in `docs/windows-port.md`.
 
 ## Relationship to upstream sqlite3
 
@@ -53,7 +67,8 @@ gain: every line in `src/` is ours, small, and auditable.
 
 ## Dependencies
 
-One: `libsqlite3`. Nothing else beyond libc and POSIX.
+One: `libsqlite3`. Nothing else beyond libc and, through `plat_*`, POSIX or
+Win32.
 
 Notably absent is any line-editing library. This is not asceticism — it is
 forced. GNU readline, libedit, and linenoise all implement completion as

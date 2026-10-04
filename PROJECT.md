@@ -1027,6 +1027,48 @@ deliberately postponed.
 
 ---
 
+### Phase 9: Identity, Windows and publication `[x]`
+
+**Description**
+
+Rename to redstone with its own identity shared with librarian
+(`docs/family.md`), port to Windows 10 1809+ behind a platform layer, and
+prepare the repository for publication: CI, release archives, winget, demo.
+
+**Tasks**
+
+- [x] Rename to redstone; redstone-ore banner and `● redstone ❯` prompt
+      (`src/brand.c`, `[brand]` theme slots); SVG logo from the same bitmap;
+      no fallback to `~/.config/sqlsh`
+- [x] Theme split into the shared engine (`theme.c`/`theme.h`) and the
+      per-program slots (`theme_slots.h`, `theme_builtin.c`)
+- [x] `include/plat.h` with `plat_posix.c`/`plat_win32.c`; every POSIX call
+      moved behind it; UTF-8 argv, VT console, binary stdio on Windows;
+      `plat_mkdir_p` and `plat_nprocs` for librarian
+- [x] `nix develop .#windows`: MinGW-w64 static cross-build, tests under Wine
+- [x] `.github/workflows/ci.yml` (Linux gate; native MSYS2 build and tests)
+      and `release.yml` (tar.gz, zip, SHA256SUMS on `v*` tags)
+- [x] `packaging/winget/0.1.0/` manifest set and per-release steps
+- [x] README per `docs/family.md`: Install, Platforms, License, demo
+      (`docs/demo.tape` -> `docs/demo.gif`)
+
+**Checks**
+
+*Automatic*
+
+- [x] `make gate` -> PASS (162 tests, 138 parity checks)
+- [x] Windows cross-build with `-Werror`; 142 tests pass under Wine (the
+      `.edit` tests need a `/bin/sh` editor stub and are POSIX-only)
+- [ ] CI green on GitHub for both jobs (first push)
+
+*Manual*
+
+- [ ] Interactive use on real Windows: Windows Terminal, `cmd.exe`,
+      PowerShell (banner, completion menu, resize, Ctrl-C, history)
+- [ ] First tagged release; winget hash filled in and submitted
+
+---
+
 ## Deferred work
 
 Recorded so each is a choice rather than an omission. Reconsidered after
@@ -1058,4 +1100,5 @@ as phases land.
 | 7 | Colours are legible on both the owner's dark and light terminal profiles | `make && ./bin/redstone tests/test.db`, then type a statement mixing known and unknown names, e.g. `SELECT id, nosuch FROM employees WHERE 'x'`. Try `.theme dark`, `.theme light` and `.theme basic` under each terminal profile, and `.theme` to see the palette as a file. |
 | 6 | `-noinit` suppresses a `~/.sqliterc` that would otherwise be visible | Put `.mode box` in `~/.sqliterc`, run `./bin/redstone tests/test.db "SELECT 1;"` (box) and `./bin/redstone -noinit tests/test.db "SELECT 1;"` (list). Not automated: the suite will not plant files in a real `$HOME`. |
 | 5 | Resizing the terminal mid-session actually re-wraps the next result, live | `make && ./bin/redstone tests/test.db`, run a query with a wide row (`SELECT * FROM employees;`), then narrow the terminal window and re-run it without restarting `redstone`. The column shrinking should track the new width. Not automated: `ioctl(TIOCGWINSZ)` needs a real controlling terminal. |
+| 9 | redstone works interactively on real Windows 10/11 | Install from the release zip (or `winget install --manifest packaging/winget/X.Y.Z`), then run `redstone` in Windows Terminal, `cmd.exe` and PowerShell. Check the banner and colours, Tab completion menu, arrow keys, resizing the window, Ctrl-C on a line, `.edit` opening notepad, and that history survives a restart (`%LOCALAPPDATA%\redstone\`). |
 | 8 | Owner sign-off on `README.md` and `docs/redstone.1` | Read both; check they match how the shell actually behaves. Not automated by design — the check is a human judgement of the docs' quality and accuracy, not a scriptable property. |
