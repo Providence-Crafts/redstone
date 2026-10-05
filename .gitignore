@@ -22,3 +22,4 @@ feature-fix.md
 
 # Amalgamation downloaded by `make fetch-sqlite`.
 /vendor/
+/dist/

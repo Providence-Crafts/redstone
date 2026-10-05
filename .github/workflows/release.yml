@@ -1,9 +1,10 @@
 name: release
 
 # Pushing a tag vX.Y.Z builds both platforms and publishes a GitHub release with
-# redstone-X.Y.Z-linux-x86_64.tar.gz and redstone-X.Y.Z-windows-x86_64.zip.
-# The winget manifest under packaging/winget/ is then updated from the zip's
-# SHA256 (see packaging/winget/README.md).
+# the bare executables (redstone-X.Y.Z-linux-x86_64, redstone-X.Y.Z-windows-x86_64.exe),
+# the archives (.tar.gz, .zip: executable, man page, README, LICENSE) and
+# SHA256SUMS. The winget manifest under packaging/winget/ is then updated from
+# the zip's SHA256 (see packaging/winget/README.md).
 on:
   push:
     tags: ['v*']
@@ -11,24 +12,21 @@ on:
 permissions:
   contents: write
 
-env:
-  SQLITE_ZIP: https://sqlite.org/2026/sqlite-amalgamation-3530300.zip
-  SQLITE_DIR: sqlite-amalgamation-3530300
-
 jobs:
   linux:
     runs-on: ubuntu-22.04 # older glibc, so the binary runs on more distributions
     steps:
       - uses: actions/checkout@v5
       - run: |
-          curl -fsSLo sqlite.zip "$SQLITE_ZIP" && unzip -q sqlite.zip
-          make CC=gcc SQLITE=vendored SQLITE_AMALGAMATION="$PWD/$SQLITE_DIR" release
+          make fetch-sqlite
+          make SQLITE=vendored release
           v="${GITHUB_REF_NAME#v}"; d="redstone-$v-linux-x86_64"
-          mkdir "$d" && cp bin/redstone docs/redstone.1 README.md "$d/"
-          if [ -f LICENSE ]; then cp LICENSE "$d/"; fi
-          tar czf "$d.tar.gz" "$d"
+          mkdir -p "dist/stage/$d"
+          cp bin/redstone docs/redstone.1 README.md LICENSE "dist/stage/$d/"
+          tar czf "dist/$d.tar.gz" -C dist/stage "$d"
+          cp bin/redstone "dist/$d"
       - uses: actions/upload-artifact@v4
-        with: { name: linux, path: 'redstone-*.tar.gz' }
+        with: { name: linux, path: 'dist/redstone-*' }
 
   windows:
     runs-on: windows-latest
@@ -42,15 +40,15 @@ jobs:
           msystem: UCRT64
           install: make unzip zip curl mingw-w64-ucrt-x86_64-gcc
       - run: |
-          curl -fsSLo sqlite.zip "$SQLITE_ZIP" && unzip -q sqlite.zip
-          make CC=gcc SQLITE=vendored SQLITE_AMALGAMATION="$PWD/$SQLITE_DIR" release
+          make fetch-sqlite
+          make SQLITE=vendored release
           v="${GITHUB_REF_NAME#v}"; d="redstone-$v-windows-x86_64"
-          mkdir "$d" && cp bin/redstone.exe docs/redstone.1 README.md "$d/"
-          if [ -f LICENSE ]; then cp LICENSE "$d/"; fi
-          zip -qr "$d.zip" "$d"
-          sha256sum "$d.zip"
+          mkdir -p "dist/stage/$d"
+          cp bin/redstone.exe docs/redstone.1 README.md LICENSE "dist/stage/$d/"
+          (cd dist/stage && zip -qr "../$d.zip" "$d")
+          cp bin/redstone.exe "dist/$d.exe"
       - uses: actions/upload-artifact@v4
-        with: { name: windows, path: 'redstone-*.zip' }
+        with: { name: windows, path: 'dist/redstone-*' }
 
   publish:
     needs: [linux, windows]

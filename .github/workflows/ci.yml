@@ -17,8 +17,19 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - run: nix develop --command make gate
 
-  # Native MinGW-w64 build on Windows: static exe with the vendored amalgamation,
-  # then the unit tests. The amalgamation version tracks flake.nix.
+  # The README's route without Nix on a stock Ubuntu: the distribution's SQLite,
+  # then the pinned amalgamation.
+  ubuntu:
+    runs-on: ubuntu-22.04 # the oldest supported system SQLite (3.37)
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsqlite3-dev sqlite3 curl unzip
+      - run: make release && ./bin/redstone --version
+      - run: make MODE=release run-tests
+      - run: make fetch-sqlite && make SQLITE=vendored release && ./bin/redstone --version
+
+  # The README's MSYS2 route on Windows: static exe with the vendored
+  # amalgamation, then the unit tests.
   windows:
     runs-on: windows-latest
     defaults:
@@ -33,11 +44,7 @@ jobs:
             make unzip curl
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-sqlite3
-      - name: Fetch the SQLite amalgamation
-        run: |
-          curl -fsSLo sqlite.zip https://sqlite.org/2026/sqlite-amalgamation-3530300.zip
-          unzip -q sqlite.zip
-          echo "SQLITE_AMALGAMATION=$PWD/sqlite-amalgamation-3530300" >> "$GITHUB_ENV"
-      - run: make CC=gcc SQLITE=vendored WARNINGS_AS_ERRORS=1 release
-      - run: make CC=gcc SQLITE=vendored MODE=release WARNINGS_AS_ERRORS=1 run-tests
+      - run: make fetch-sqlite
+      - run: make SQLITE=vendored WARNINGS_AS_ERRORS=1 release
+      - run: make SQLITE=vendored MODE=release WARNINGS_AS_ERRORS=1 run-tests
       - run: ./bin/redstone.exe --version
