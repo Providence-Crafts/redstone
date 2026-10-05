@@ -4,6 +4,10 @@
 
 <h1 align="center">redstone</h1>
 
+<p align="center">
+  <a href="https://github.com/Providence-Crafts/redstone/releases/latest"><img src="https://img.shields.io/github/v/release/Providence-Crafts/redstone" alt="latest release"></a>
+</p>
+
 A drop-in replacement for `sqlite3(1)` with zsh-style completion, live syntax
 highlighting, a colour theme system, and output worth looking at.
 
