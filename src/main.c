@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define REDSTONE_VERSION "0.1.0"
+#define REDSTONE_VERSION "0.1.1"
 
 static CompList *complete_for(void *ctx, const char *text, size_t cursor)
 {

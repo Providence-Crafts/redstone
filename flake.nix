@@ -31,7 +31,7 @@
       {
         packages.default = pkgs.stdenv.mkDerivation {
           pname = "redstone";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./.;
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = [ pkgs.sqlite ];
