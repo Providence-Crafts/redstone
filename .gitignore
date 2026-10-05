@@ -17,6 +17,8 @@ test.db
 # clangd index, written by the editor.
 /.cache/
 
-PROJECT.md
 docs/logos/
 feature-fix.md
+
+# Amalgamation downloaded by `make fetch-sqlite`.
+/vendor/

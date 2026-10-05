@@ -5,8 +5,10 @@
 
 # `CC ?=` does not work here: make predefines CC, so ?= never fires.
 # Only override when the value is make's own default.
+# clang when installed (the Nix shell has it), then gcc, then cc, so a plain
+# Ubuntu or MSYS2 install builds without extra flags.
 ifeq ($(origin CC),default)
-  CC = clang
+  CC = $(firstword $(foreach c,clang gcc,$(if $(shell command -v $(c) 2>/dev/null),$(c))) cc)
 endif
 STD = -std=c99
 
@@ -61,9 +63,22 @@ endif
 # SQLite backend: system library (default) or vendored amalgamation
 #   make                   -> pkg-config sqlite3
 #   make SQLITE=vendored   -> compile sqlite3.c from $(SQLITE_AMALGAMATION)
-# SQLITE_AMALGAMATION is exported by the nix devShell.
+# SQLITE_AMALGAMATION is exported by the nix devShell. Outside it,
+# `make fetch-sqlite` downloads the same release into vendor/, which is then
+# picked up automatically.
 # ------------------------------------------------------------------------------
 SQLITE ?= system
+
+# Keep in step with flake.nix. The SHA-256 is of the zip itself.
+SQLITE_RELEASE = 3530300
+SQLITE_ZIP_URL = https://sqlite.org/2026/sqlite-amalgamation-$(SQLITE_RELEASE).zip
+SQLITE_ZIP_SHA256 = 646421e12aac110282ef8cc68f1a62d4bb15fc7b8f09da0b53e29ee690500431
+SQLITE_VENDOR_DIR = vendor/sqlite-amalgamation-$(SQLITE_RELEASE)
+ifeq ($(SQLITE_AMALGAMATION),)
+  ifneq ($(wildcard $(SQLITE_VENDOR_DIR)/sqlite3.c),)
+    SQLITE_AMALGAMATION = $(CURDIR)/$(SQLITE_VENDOR_DIR)
+  endif
+endif
 
 # Objects are keyed by backend as well as mode: the two backends compile with
 # different include paths, so they must not share a directory either.
@@ -72,7 +87,7 @@ BUILD_DIR = build/$(SQLITE)/$(MODE)
 ifeq ($(SQLITE),vendored)
   ifeq ($(SQLITE_AMALGAMATION),)
     $(error SQLITE=vendored requires SQLITE_AMALGAMATION to point at a directory \
-containing sqlite3.c and sqlite3.h. Enter the nix devShell, or set it by hand)
+containing sqlite3.c and sqlite3.h. Run `make fetch-sqlite`, enter the nix devShell, or set it by hand)
   endif
   SQLITE_CFLAGS = -I$(SQLITE_AMALGAMATION)
   ifeq ($(WINDOWS),1)
@@ -157,7 +172,7 @@ OBJS = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
 TEST_SRCS = $(filter-out $(TEST_DIR)/fuzz_tokenizer.c, $(wildcard $(TEST_DIR)/*.c))
 TEST_OBJS = $(patsubst $(TEST_DIR)/%.c, $(BUILD_DIR)/tests/%.o, $(TEST_SRCS))
 
-.PHONY: all release debug asan msan binary test run-tests fixtures reference \
+.PHONY: all release debug asan msan binary test run-tests fixtures reference fetch-sqlite \
         valgrind tidy cppcheck format format-check parity gate compdb watch \
         fuzz install clean help
 
@@ -381,6 +396,13 @@ install: release
 $(BIN_DIR) $(BUILD_DIR) $(BUILD_DIR)/tests $(BUILD_DIR)/vendor:
 	mkdir -p $@
 
+# Needs curl, unzip and sha256sum: present on MSYS2 and a stock Ubuntu.
+fetch-sqlite:
+	mkdir -p vendor
+	curl -fsSLo vendor/sqlite.zip $(SQLITE_ZIP_URL)
+	echo "$(SQLITE_ZIP_SHA256)  vendor/sqlite.zip" | sha256sum -c -
+	cd vendor && unzip -qo sqlite.zip && rm sqlite.zip
+
 clean:
 	rm -rf build $(BIN_DIR) compile_commands.json
 
@@ -394,6 +416,7 @@ help:
 	@echo "  make fixtures         regenerate tests/test.db"
 	@echo "  make reference        fetch sqlite shell.c into reference/"
 	@echo "  make SQLITE=vendored  build against the sqlite amalgamation"
+	@echo "  make fetch-sqlite     download the amalgamation into vendor/"
 	@echo "  make parity           differential output-parity suite vs sqlite3(1)"
 	@echo "  make tidy cppcheck format compdb valgrind watch fuzz"
 	@echo "  make install PREFIX=~/.local"
