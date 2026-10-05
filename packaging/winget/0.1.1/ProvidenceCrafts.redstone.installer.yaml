@@ -10,6 +10,6 @@ NestedInstallerFiles:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/Providence-Crafts/redstone/releases/download/v0.1.1/redstone-0.1.1-windows-x86_64.zip
-    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+    InstallerSha256: 8390214671A04C8F042611723A764D562EE629AD6B8047538AD6BE522739D5F7
 ManifestType: installer
 ManifestVersion: 1.6.0
