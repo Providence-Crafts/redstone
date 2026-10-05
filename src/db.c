@@ -101,7 +101,9 @@ static void configure(sqlite3 *handle)
 
     (void)sqlite3_db_config(handle, SQLITE_DBCONFIG_DQS_DDL, 0, &ignored);
     (void)sqlite3_db_config(handle, SQLITE_DBCONFIG_DQS_DML, 0, &ignored);
+#ifdef SQLITE_DBCONFIG_STMT_SCANSTATUS /* 3.42+ */
     (void)sqlite3_db_config(handle, SQLITE_DBCONFIG_STMT_SCANSTATUS, 0, &ignored);
+#endif
     (void)sqlite3_db_config(handle, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, &ignored);
     (void)sqlite3_db_config(handle, SQLITE_DBCONFIG_DEFENSIVE, 1, &ignored);
     /* Loading is enabled but nothing is loaded: .load is still the only way
@@ -1156,7 +1158,9 @@ bool db_restore_from(Db *db, const char *dbname, const char *file, FILE *err)
 }
 
 /* The limit and dbconfig tables are the only places a name maps to a
- * <sqlite3.h> constant, which is why they live here rather than in dot.c. */
+ * <sqlite3.h> constant, which is why they live here rather than in dot.c.
+ * Entries newer than the oldest supported system SQLite are guarded, so an
+ * older library simply lists fewer names, as its own sqlite3(1) would. */
 static const struct {
     const char *name;
     int id;
@@ -1165,7 +1169,9 @@ static const struct {
     {"sql_length", SQLITE_LIMIT_SQL_LENGTH},
     {"column", SQLITE_LIMIT_COLUMN},
     {"expr_depth", SQLITE_LIMIT_EXPR_DEPTH},
+#ifdef SQLITE_LIMIT_PARSER_DEPTH
     {"parser_depth", SQLITE_LIMIT_PARSER_DEPTH},
+#endif
     {"compound_select", SQLITE_LIMIT_COMPOUND_SELECT},
     {"vdbe_op", SQLITE_LIMIT_VDBE_OP},
     {"function_arg", SQLITE_LIMIT_FUNCTION_ARG},
@@ -1202,9 +1208,15 @@ static const struct {
     const char *name;
     int id;
 } g_dbconfig[] = {
+#ifdef SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE
     {"attach_create", SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE},
+#endif
+#ifdef SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE
     {"attach_write", SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE},
+#endif
+#ifdef SQLITE_DBCONFIG_ENABLE_COMMENTS
     {"comments", SQLITE_DBCONFIG_ENABLE_COMMENTS},
+#endif
     {"defensive", SQLITE_DBCONFIG_DEFENSIVE},
     {"dqs_ddl", SQLITE_DBCONFIG_DQS_DDL},
     {"dqs_dml", SQLITE_DBCONFIG_DQS_DML},
@@ -1213,14 +1225,20 @@ static const struct {
     {"enable_trigger", SQLITE_DBCONFIG_ENABLE_TRIGGER},
     {"enable_view", SQLITE_DBCONFIG_ENABLE_VIEW},
     {"fts3_tokenizer", SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER},
+#ifdef SQLITE_DBCONFIG_FP_DIGITS
     {"fp_digits", SQLITE_DBCONFIG_FP_DIGITS},
+#endif
     {"legacy_alter_table", SQLITE_DBCONFIG_LEGACY_ALTER_TABLE},
     {"legacy_file_format", SQLITE_DBCONFIG_LEGACY_FILE_FORMAT},
     {"load_extension", SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION},
     {"no_ckpt_on_close", SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE},
     {"reset_database", SQLITE_DBCONFIG_RESET_DATABASE},
+#ifdef SQLITE_DBCONFIG_REVERSE_SCANORDER
     {"reverse_scanorder", SQLITE_DBCONFIG_REVERSE_SCANORDER},
+#endif
+#ifdef SQLITE_DBCONFIG_STMT_SCANSTATUS
     {"stmt_scanstatus", SQLITE_DBCONFIG_STMT_SCANSTATUS},
+#endif
     {"trigger_eqp", SQLITE_DBCONFIG_TRIGGER_EQP},
     {"trusted_schema", SQLITE_DBCONFIG_TRUSTED_SCHEMA},
     {"writable_schema", SQLITE_DBCONFIG_WRITABLE_SCHEMA},
