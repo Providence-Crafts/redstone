@@ -22,48 +22,68 @@ is the tour.
 
 ## Install
 
-**Linux**: download `redstone-X.Y.Z-linux-x86_64.tar.gz` from the
-[releases](https://github.com/Providence-Crafts/redstone/releases), then put
-`redstone` on your `PATH` and `redstone.1` in your man path. SQLite is compiled in.
+Every [release](https://github.com/Providence-Crafts/redstone/releases) carries
+a ready-to-run executable for each platform, plus an archive that adds the man
+page, README and licence. SQLite is compiled in; there is nothing else to install.
 
-**Windows**: `winget install ProvidenceCrafts.redstone`, or download
-`redstone-X.Y.Z-windows-x86_64.zip` from the releases and put `redstone.exe` on your
-`PATH`. It is a single static `.exe`, with SQLite compiled in and no runtime to install.
+**Linux**: download `redstone-X.Y.Z-linux-x86_64`, then
+`chmod +x` it and put it on your `PATH` as `redstone`. Or take
+`redstone-X.Y.Z-linux-x86_64.tar.gz` for the man page as well (`redstone.1`).
 
-**From source**: `nix build` gives `result/bin/redstone`. Without Nix, any C99
-compiler with `libsqlite3` works: `make release && make install PREFIX=~/.local`.
+**Windows** (10 1809 or later): `winget install ProvidenceCrafts.redstone`, or
+download `redstone-X.Y.Z-windows-x86_64.exe` (a single static executable) and put
+it on your `PATH` as `redstone.exe`. `redstone-X.Y.Z-windows-x86_64.zip` holds the
+same executable with the docs.
+
+Check a download against `SHA256SUMS` in the same release. **From source**: see
+[Build](#build); Nix is optional.
 
 ## Build
 
-Everything happens inside the pinned Nix flake — no system dependency beyond
-`libsqlite3` is assumed.
+Any C99 compiler, `make` and SQLite. The Makefile uses clang, then gcc, then
+`cc`, whichever it finds first.
+
+**Ubuntu / Debian** (22.04 or later):
 
 ```sh
-nix develop            # enter the dev shell once, then run make from inside it
+sudo apt install build-essential pkg-config libsqlite3-dev sqlite3 curl unzip
+make release                    # bin/redstone, linked to the system libsqlite3
+make install PREFIX=~/.local    # bin/redstone and the man page; never installs as sqlite3
+```
+
+To compile SQLite in instead (the release build), fetch the pinned amalgamation
+once; its SHA-256 is checked:
+
+```sh
+make fetch-sqlite && make SQLITE=vendored release
+```
+
+**Windows**, in an [MSYS2](https://www.msys2.org) UCRT64 shell:
+
+```sh
+pacman -S --needed make unzip curl mingw-w64-ucrt-x86_64-gcc
+make fetch-sqlite && make SQLITE=vendored release    # bin/redstone.exe, static
+```
+
+**Nix**: the flake pins every tool used in development.
+
+```sh
+nix build               # result/bin/redstone
+nix develop             # dev shell; run make from inside it
 make                    # debug build -> bin/redstone
-make release            # optimised build
-make SQLITE=vendored    # build against the sqlite amalgamation instead of the system library
 make test               # unit + pty tests under ASan+UBSan
 make parity             # differential output test vs the real sqlite3(1)
 make gate               # format, both builds, tests, parity, cppcheck, clang-tidy -> PASS
-make install PREFIX=~/.local   # installs bin/redstone and the man page only, never as/symlinked to sqlite3
 ```
 
 `make help` lists every target, including `valgrind`, `fuzz`, `tidy`,
-`cppcheck`, `compdb` and `watch`.
+`cppcheck`, `compdb` and `watch`. `nix develop .#windows` cross-compiles
+`redstone.exe` from Linux and runs the tests under Wine
+(`make SQLITE=vendored MODE=release run-tests`).
 
-The Windows build cross-compiles from Linux in its own shell and runs the
-tests under Wine:
-
-```sh
-nix develop .#windows
-make SQLITE=vendored release            # bin/redstone.exe, static
-make SQLITE=vendored MODE=release run-tests
-```
-
-CI (`.github/workflows/ci.yml`) runs the gate on Linux and a native MinGW build
-and tests on Windows. Pushing a `v*` tag publishes both release archives
-(`release.yml`).
+CI (`.github/workflows/ci.yml`) runs the gate in the Nix shell, the Ubuntu
+route without Nix, and the MSYS2 build and tests on Windows. Pushing a `v*`
+tag publishes the executables and archives (`release.yml`).
 
 ## Usage
 
